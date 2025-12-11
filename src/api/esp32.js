@@ -1,4 +1,4 @@
-const HOST = "http://192.168.196.57";     // sua lai IP cua ban
+const HOST = "http://192.168.62.57"; // sua lai IP cua ban
 
 export const ESP = {
   stream: `${HOST}:81/stream`,

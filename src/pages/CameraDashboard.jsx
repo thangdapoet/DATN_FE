@@ -13,15 +13,27 @@ export default function CameraDashboard() {
   const [brightness, setBrightness] = useState(0);
   const [saturation, setSaturation] = useState(0);
 
+  const [historyByDate, setHistoryByDate] = useState({});
+  const [selectedDate, setSelectedDate] = useState("");
+
   const [events, setEvents] = useState([]);
   const [albumOpen, setAlbumOpen] = useState(false);
   const [photos, setPhotos] = useState([]);
-
-  const [history, setHistory] = useState({});
+  const [lastSeq, setLastSeq] = useState(0);
 
   async function loadHistory() {
+    // API returns grouped-by-date object: { "2025-12-02": [ ...items ], ... }
     const data = await getHistoryGroupedByDateAsync();
-    setHistory(data);
+    setHistoryByDate(data);
+
+    // pick newest date as default
+    const dates = Object.keys(data);
+    if (dates.length > 0) {
+      const newest = dates.sort((a, b) => new Date(b) - new Date(a))[0];
+      setSelectedDate(newest);
+    } else {
+      setSelectedDate("");
+    }
   }
 
   useEffect(() => {
@@ -40,15 +52,6 @@ export default function CameraDashboard() {
     }
   }
 
-  async function handleNotify(status, id) {
-    try {
-      await fetch(ESP.notify(status, id), { method: "POST" });
-      console.log("Notify sent:", status, id);
-    } catch (e) {
-      console.error("Notify failed", e);
-    }
-  }
-
   async function handleFlashToggle() {
     await fetch(ESP.toggleFlash(), { method: "POST" });
     loadState();
@@ -64,116 +67,13 @@ export default function CameraDashboard() {
     await fetch(ESP.setSaturation(v));
   }
 
-  // ============================================================
-  // 🚀 REAL TEST BUTTON — force ESP to capture & save history
-  // ============================================================
-  async function testCaptureFlow() {
-    try {
-      console.log("📸 Triggering ESP32 to capture image...");
-
-      // 1️⃣ Tell ESP to capture & save image
-      await fetch(ESP.notify("ok", "TEST123"), { method: "GET" });
-
-      // 2️⃣ Give ESP time to save into SPIFFS (important!)
-      await new Promise((r) => setTimeout(r, 500));
-
-      // 3️⃣ Now fetch the newest event
-      const evRes = await fetch(ESP.lastEvent());
-      const event = await evRes.json();
-
-      console.log("📩 Capture event:", event);
-
-      if (!event.seq) {
-        alert("❌ No event/seq found. ESP did not capture image.");
-        return;
-      }
-
-      const { seq, id, status } = event;
-
-      // 4️⃣ Fetch the image from ESP SPIFFS
-      const imgRes = await fetch(ESP.photo(seq));
-      const blob = await imgRes.blob();
-
-      console.log("📸 Downloaded image from ESP");
-
-      // 5️⃣ Upload to FastAPI
-      const upload = await uploadHistoryImageAsync(blob);
-      const imageUrl = upload.image_url;
-
-      console.log("⬆ Uploaded to FastAPI:", imageUrl);
-
-      // 6️⃣ Save DB record
-      await createHistoryAsync({
-        image_url: imageUrl,
-        uid: id || "TEST123",
-        status: status,
-      });
-
-      console.log("💾 Saved to History DB");
-
-      // 7️⃣ Reload UI
-      await loadHistory();
-
-      alert("✔ ESP Capture + Upload + DB Save SUCCESS!");
-    } catch (err) {
-      console.error("❌ Test flow failed:", err);
-      alert("Error testing capture. Check console.");
-    }
-  }
-
-  // ============================================================
-  // 🔄 MANUAL TEST BUTTON — trigger last_event immediately
-  // ============================================================
-  async function testLastEvent() {
-    try {
-      console.log("🔍 Checking last event...");
-      const res = await fetch(ESP.lastEvent());
-      const json = await res.json();
-
-      console.log("📩 last_event result:", json);
-
-      if (!json.seq) {
-        alert("No event available yet!");
-        return;
-      }
-
-      const { seq, status, id } = json;
-
-      // 1️⃣ Fetch image
-      const imageRes = await fetch(ESP.photo(seq));
-      const blob = await imageRes.blob();
-
-      // 2️⃣ Upload image
-      const uploadRes = await uploadHistoryImageAsync(blob);
-      const imageUrl = uploadRes.image_url;
-
-      // 3️⃣ Save History to DB
-      await createHistoryAsync({
-        image_url: imageUrl,
-        uid: id || "UNKNOWN",
-        status: status,
-      });
-
-      console.log("💾 History saved manually");
-      await loadHistory();
-
-      alert("✔ Manual Event Saved To History!");
-    } catch (err) {
-      console.error("Manual test error:", err);
-      alert("Error testing last event. Check console.");
-    }
-  }
-
   async function handleNewEvent({ seq, status, id }) {
-    // tải ảnh
     const imageRes = await fetch(ESP.photo(seq));
     const blob = await imageRes.blob();
 
-    // upload
     const uploadRes = await uploadHistoryImageAsync(blob);
     const imageUrl = uploadRes.image_url;
 
-    // save DB
     await createHistoryAsync({
       image_url: imageUrl,
       uid: id || "UNKNOWN",
@@ -183,30 +83,54 @@ export default function CameraDashboard() {
     await loadHistory();
   }
 
-  // ============================================================
-  // 🔥 AUTO EVENT POLLING
-  // ============================================================
-  useEffect(() => {
-    let lastSeq = 0;
+  // ✅ NEW: fetch lastEvent once at start to init lastSeq
+  async function initLastSeq() {
+    try {
+      const res = await fetch(ESP.lastEvent());
+      const json = await res.json();
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(ESP.lastEvent());
-        const json = await res.json();
-
-        if (json.seq > 0 && json.seq !== lastSeq) {
-          lastSeq = json.seq;
-
-          setEvents((prev) => [...prev, json]);
-
-          await handleNewEvent(json);
-        }
-      } catch (err) {
-        console.warn("Polling error", err);
+      if (json.seq > 0) {
+        setLastSeq(json.seq);
       }
-    }, 800);
+    } catch (err) {
+      console.warn("Init lastSeq failed", err);
+    }
+  }
 
-    return () => clearInterval(interval);
+  // 🔥 AUTO EVENT POLLING
+  useEffect(() => {
+    let intervalId;
+
+    async function startPolling() {
+      // first, load current last seq so we don't re-handle old event
+      await initLastSeq();
+
+      intervalId = setInterval(async () => {
+        try {
+          const res = await fetch(ESP.lastEvent());
+          const json = await res.json();
+
+          setLastSeq((prevSeq) => {
+            // only handle if it's a new seq
+            if (json.seq > 0 && json.seq !== prevSeq) {
+              setEvents((prevEvents) => [...prevEvents, json]);
+              // fire-and-forget; we don't await inside setState
+              handleNewEvent(json);
+              return json.seq;
+            }
+            return prevSeq;
+          });
+        } catch (err) {
+          console.warn("Polling error", err);
+        }
+      }, 800);
+    }
+
+    startPolling();
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
 
   async function loadAlbum() {
@@ -219,6 +143,16 @@ export default function CameraDashboard() {
     if (albumOpen) loadAlbum();
   }, [albumOpen]);
 
+  // sorted date list for the select box
+  const sortedDates = Object.keys(historyByDate).sort(
+    (a, b) => new Date(b) - new Date(a)
+  );
+
+  const selectedItems =
+    selectedDate && historyByDate[selectedDate]
+      ? historyByDate[selectedDate]
+      : [];
+
   return (
     <div className="min-h-screen bg-[#1b1b24] p-6 text-white">
       {/* HEADER */}
@@ -226,11 +160,11 @@ export default function CameraDashboard() {
         <h1 className="text-3xl font-semibold">Smart Cam Dashboard</h1>
 
         <button
-          onClick={() => setAlbumOpen(!albumOpen)}
+          onClick={() => setAlbumOpen(true)}
           className="px-5 py-2 flex items-center gap-2 bg-purple-600 hover:bg-purple-500 transition rounded-xl shadow-lg"
         >
           <FiImage className="text-xl" />
-          {albumOpen ? "Hide Album" : "Open Album"}
+          Open Album
         </button>
       </div>
 
@@ -252,84 +186,11 @@ export default function CameraDashboard() {
               </div>
             </div>
           </div>
-
-          {/* EVENT LOG */}
-          <div className="bg-[#262631] rounded-2xl p-6 shadow-xl">
-            <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
-              <FiBarChart2 /> Event Log (Real-Time)
-            </h2>
-
-            <div className="max-h-56 overflow-y-auto space-y-3 pr-1">
-              {events.map((ev, i) => (
-                <div
-                  key={i}
-                  className="p-3 bg-[#1e1e27] border border-gray-700 rounded-xl text-gray-300 shadow-inner"
-                >
-                  {ev.status === "ok" && ev.id && (
-                    <div>
-                      {i + 1}. {ev.id} đã vào
-                    </div>
-                  )}
-
-                  {ev.status === "bad" && (
-                    <div>{i + 1}. Phát hiện người lạ</div>
-                  )}
-
-                  {ev.status !== "ok" && ev.status !== "bad" && (
-                    <div>
-                      {i + 1}. Status: {ev.status}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* HISTORY */}
-          <div className="bg-[#262631] rounded-2xl p-6 shadow-xl">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <FiBarChart2 /> History (Grouped by Date)
-            </h2>
-
-            <div className="max-h-64 overflow-y-auto pr-2 space-y-4">
-              {Object.entries(history).map(([date, items], idx) => (
-                <div
-                  key={idx}
-                  className="bg-[#1e1e27] p-4 rounded-xl border border-gray-700"
-                >
-                  <h3 className="text-lg text-purple-300 font-semibold mb-2">
-                    {date}
-                  </h3>
-
-                  {items.map((h) => (
-                    <div
-                      key={h.HistoryId}
-                      className="p-2 bg-[#2d2d38] rounded-lg text-sm text-gray-300 mb-2"
-                    >
-                      <div>
-                        <b>ID:</b> {h.UID}
-                      </div>
-                      <div>
-                        <b>Status:</b> {h.Status}
-                      </div>
-                      <div>
-                        <b>Time:</b> {new Date(h.CreatedDate).toLocaleString()}
-                      </div>
-
-                      <img
-                        src={h.ImageUrl}
-                        className="w-32 h-20 rounded-lg mt-2 border border-gray-600 object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* RIGHT SIDE */}
         <div className="xl:col-span-1 w-full flex flex-col gap-6">
+          {/* CAMERA CONTROLS */}
           <div className="bg-[#262631] rounded-2xl p-6 shadow-xl w-full">
             <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
               <FiZap /> Camera Controls
@@ -345,36 +206,6 @@ export default function CameraDashboard() {
                 }`}
               >
                 {flash ? "ON" : "OFF"}
-              </button>
-            </div>
-
-            {/* TEST BUTTONS */}
-            <div className="mb-8">
-              <span className="text-lg font-medium">Test Notify</span>
-              <div className="flex gap-3 mt-3">
-                <button
-                  onClick={() => handleNotify("ok", "12345")}
-                  className="px-5 py-2 bg-green-600 hover:bg-green-500 rounded-xl"
-                >
-                  Notify OK
-                </button>
-                <button
-                  onClick={() => handleNotify("bad", "12345")}
-                  className="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-xl"
-                >
-                  Notify BAD
-                </button>
-              </div>
-            </div>
-
-            {/* CAPTURE TEST */}
-            <div className="mb-8">
-              <span className="text-lg font-medium">Manual Capture Test</span>
-              <button
-                onClick={testCaptureFlow}
-                className="mt-3 px-5 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-md"
-              >
-                📸 Trigger Capture & Save History
               </button>
             </div>
 
@@ -409,19 +240,131 @@ export default function CameraDashboard() {
               />
             </div>
           </div>
+
+          {/* EVENT LOG */}
+          <div className="bg-[#262631] rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
+              <FiBarChart2 /> Event Log (Real-Time)
+            </h2>
+
+            <div className="max-h-56 overflow-y-auto space-y-3 pr-1">
+              {events.map((ev, i) => (
+                <div
+                  key={i}
+                  className="p-3 bg-[#1e1e27] border border-gray-700 rounded-xl text-gray-300 shadow-inner"
+                >
+                  {ev.status === "ok" && ev.id && (
+                    <div>
+                      {i + 1}. {ev.id} đã vào
+                    </div>
+                  )}
+
+                  {ev.status === "bad" && (
+                    <div>{i + 1}. Phát hiện người lạ</div>
+                  )}
+
+                  {ev.status !== "ok" && ev.status !== "bad" && (
+                    <div>
+                      {i + 1}. Status: {ev.status}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ALBUM */}
+      {/* POPUP: Album + History */}
       {albumOpen && (
-        <div className="bg-[#262631] mt-8 p-6 rounded-2xl shadow-xl grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {photos.map((seq, i) => (
-            <img
-              key={i}
-              src={ESP.photo(seq)}
-              className="rounded-xl shadow-md object-cover h-28 w-full border border-gray-700"
-            />
-          ))}
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
+          <div className="bg-[#262631] rounded-2xl shadow-2xl p-6 w-[90vw] max-w-6xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-semibold flex items-center gap-2">
+                <FiImage /> Album &amp; History
+              </h2>
+              <button
+                onClick={() => setAlbumOpen(false)}
+                className="px-4 py-1 rounded-lg bg-gray-700 hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Album grid */}
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-3">Album</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {photos.map((seq, i) => (
+                  <img
+                    key={i}
+                    src={ESP.photo(seq)}
+                    className="rounded-xl shadow-md object-cover h-28 w-full border border-gray-700"
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* History in popup */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <FiBarChart2 /> History
+                </h3>
+
+                {/* Date select box */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-300">Date:</span>
+                  <select
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    className="bg-[#1e1e27] border border-gray-600 rounded-lg px-2 py-1 text-sm"
+                  >
+                    {sortedDates.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* History list for selected date */}
+              {selectedDate && selectedItems.length > 0 ? (
+                <div className="bg-[#1e1e27] p-4 rounded-xl border border-gray-700">
+                  <h4 className="text-lg text-purple-300 font-semibold mb-2">
+                    {selectedDate}
+                  </h4>
+
+                  {selectedItems.map((h) => (
+                    <div
+                      key={h.HistoryId}
+                      className="p-2 bg-[#2d2d38] rounded-lg text-sm text-gray-300 mb-2"
+                    >
+                      <div>
+                        <b>ID:</b> {h.UID}
+                      </div>
+                      <div>
+                        <b>Status:</b> {h.Status}
+                      </div>
+                      <div>
+                        <b>Time:</b> {new Date(h.CreatedDate).toLocaleString()}
+                      </div>
+
+                      <img
+                        src={h.ImageUrl}
+                        className="w-32 h-20 rounded-lg mt-2 border border-gray-600 object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-400 mt-4">
+                  No history for this date.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
