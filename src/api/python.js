@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "http://192.168.1.10:8000";
 
 // ===============================
 // 📌 1. Get history grouped by date
