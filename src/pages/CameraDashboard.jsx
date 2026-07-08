@@ -1,25 +1,17 @@
 import { useState, useEffect } from "react";
-import { FiZap, FiCamera, FiImage, FiBarChart2 } from "react-icons/fi";
-import { MdBrightness6 } from "react-icons/md";
+import { FiCamera, FiImage, FiBarChart2 } from "react-icons/fi";
 import { getHistoryGroupedByDateAsync } from "../api/python";
 
 export default function CameraDashboard() {
-  const [flash, setFlash] = useState(false);
-  const [brightness, setBrightness] = useState(0);
-  const [saturation, setSaturation] = useState(0);
-
   const [historyByDate, setHistoryByDate] = useState({});
   const [selectedDate, setSelectedDate] = useState("");
-
   const [events, setEvents] = useState([]);
   const [albumOpen, setAlbumOpen] = useState(false);
 
-  // Thay bằng IP máy tính của bạn nếu chạy trên điện thoại/máy khác
   const API_BASE_URL = "http://192.168.1.10:8000";
   const WS_URL = "ws://192.168.1.10:8000/ws/events";
 
-  // Hàm load dữ liệu lịch sử từ Backend
-  async function loadHistory() {
+  const loadHistory = async () => {
     try {
       const data = await getHistoryGroupedByDateAsync();
       setHistoryByDate(data);
@@ -34,14 +26,12 @@ export default function CameraDashboard() {
     } catch (error) {
       console.error("Lỗi khi tải lịch sử:", error);
     }
-  }
+  };
 
-  // Chạy lần đầu khi mở trang
   useEffect(() => {
     loadHistory();
   }, []);
 
-  // 🔴 LẮNG NGHE SỰ KIỆN TỪ WEBSOCKET (THAY THẾ POLLING)
   useEffect(() => {
     const socket = new WebSocket(WS_URL);
 
@@ -53,38 +43,23 @@ export default function CameraDashboard() {
       const data = JSON.parse(event.data);
       console.log("🔔 Nhận sự kiện MQTT từ Backend:", data);
 
-      // Thêm sự kiện mới vào danh sách log (đưa lên đầu)
       setEvents((prevEvents) => [data, ...prevEvents]);
-
-      // Khi có người quẹt thẻ, Python đã lưu DB xong -> Báo FE load lại lịch sử
       loadHistory();
     };
 
     socket.onerror = (err) => console.error("Lỗi WebSocket:", err);
 
-    return () => {
-      socket.close(); // Dọn dẹp kết nối khi đóng tab
-    };
+    return () => socket.close();
   }, []);
 
-  // Các hàm điều khiển phần cứng tạm thời vô hiệu hóa / hoặc bạn tự map qua MQTT sau
-  const handleFlashToggle = () => setFlash(!flash);
-  const updateBrightness = (v) => setBrightness(v);
-  const updateSaturation = (v) => setSaturation(v);
-
-  // Xử lý hiển thị danh sách ngày
   const sortedDates = Object.keys(historyByDate).sort(
     (a, b) => new Date(b) - new Date(a),
   );
 
-  const selectedItems =
-    selectedDate && historyByDate[selectedDate]
-      ? historyByDate[selectedDate]
-      : [];
+  const selectedItems = historyByDate[selectedDate] || [];
 
   return (
     <div className="min-h-screen bg-[#1b1b24] p-6 text-white">
-      {/* HEADER */}
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-semibold">Smart Cam Dashboard</h1>
 
@@ -98,9 +73,7 @@ export default function CameraDashboard() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        {/* LEFT SIDE */}
         <div className="xl:col-span-2 flex flex-col gap-6">
-          {/* CAMERA */}
           <div className="bg-[#262631] rounded-2xl p-6 shadow-xl w-full">
             <div className="flex justify-between mb-4">
               <h2 className="text-xl font-semibold flex items-center gap-2">
@@ -111,7 +84,6 @@ export default function CameraDashboard() {
 
             <div className="flex justify-center w-full">
               <div className="w-full max-w-[720px] bg-black rounded-2xl overflow-hidden border border-gray-700">
-                {/* ĐÃ ĐỔI LUỒNG STREAM SANG API CỦA FASTAPI */}
                 <img
                   src={`${API_BASE_URL}/video_feed`}
                   alt="Live Stream"
@@ -122,9 +94,7 @@ export default function CameraDashboard() {
           </div>
         </div>
 
-        {/* RIGHT SIDE */}
         <div className="xl:col-span-1 w-full flex flex-col gap-6">
-          {/* EVENT LOG */}
           <div className="bg-[#262631] rounded-2xl p-6 shadow-xl">
             <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
               <FiBarChart2 /> Lịch sử sự kiện (Real-Time)
@@ -153,7 +123,6 @@ export default function CameraDashboard() {
         </div>
       </div>
 
-      {/* POPUP: History */}
       {albumOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center">
           <div className="bg-[#262631] rounded-2xl shadow-2xl p-6 w-[90vw] max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -169,7 +138,6 @@ export default function CameraDashboard() {
               </button>
             </div>
 
-            {/* Date select box */}
             <div className="flex items-center gap-2 mb-4">
               <span className="text-sm text-gray-300">Chọn Ngày:</span>
               <select
@@ -185,7 +153,6 @@ export default function CameraDashboard() {
               </select>
             </div>
 
-            {/* History list for selected date */}
             {selectedDate && selectedItems.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                 {selectedItems.map((h) => (
@@ -194,7 +161,6 @@ export default function CameraDashboard() {
                     className="p-3 bg-[#1e1e27] rounded-xl border border-gray-700 flex flex-col justify-between"
                   >
                     <div>
-                      {/* ĐẢM BẢO ẢNH LOAD ĐÚNG TỪ THƯ MỤC UPLOADS CỦA FASTAPI */}
                       <img
                         src={`${API_BASE_URL}/${h.ImageUrl}`}
                         alt="Face Capture"
