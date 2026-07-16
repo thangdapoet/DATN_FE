@@ -5,3 +5,25 @@
 body {
   @apply bg-bg text-gray-200;
 }
+::-webkit-scrollbar {
+  width: 10px; /* Độ rộng của thanh cuộn dọc */
+  height: 8px; /* Độ cao của thanh cuộn ngang */
+}
+
+/* Phần nền của thanh cuộn */
+::-webkit-scrollbar-track {
+  background: #0f172a; /* Màu slate-900 (trùng với màu nền web) */
+  border-radius: 10px;
+}
+
+/* Cục lăn (Thumb) */
+::-webkit-scrollbar-thumb {
+  background: #334155; /* Màu slate-700 (xám đậm) */
+  border-radius: 10px;
+  border: 1px solid #0f172a; /* Tạo viền mỏng cách điệu */
+}
+
+/* Hiệu ứng khi di chuột vào cục lăn */
+::-webkit-scrollbar-thumb:hover {
+  background: #06b6d4; /* Đổi sang màu Neon Cyan khi hover */
+}
