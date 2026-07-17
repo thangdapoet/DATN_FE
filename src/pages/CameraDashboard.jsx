@@ -2,13 +2,13 @@ import { useState, useEffect } from "react";
 import { getHistoryGroupedByDateAsync } from "../api/python";
 import {
   FiCamera,
-  FiImage,
   FiBarChart2,
   FiAlertCircle,
   FiUserCheck,
   FiUserX,
   FiCreditCard,
   FiLock,
+  FiShield,
 } from "react-icons/fi";
 
 export default function CameraDashboard() {
@@ -52,8 +52,21 @@ export default function CameraDashboard() {
       const data = JSON.parse(event.data);
       console.log("🔔 Nhận sự kiện MQTT từ Backend:", data);
 
-      setEvents((prevEvents) => [data, ...prevEvents]);
-      loadHistory();
+      // Thêm Timestamp cho sự kiện Live
+      const newEvent = { ...data, time: new Date().toLocaleTimeString() };
+
+      // Chỉ giữ tối đa 15 sự kiện mới nhất trên màn hình để không bị tràn UI
+      setEvents((prevEvents) => [newEvent, ...prevEvents].slice(0, 15));
+
+      // TỐI ƯU: Chỉ fetch lại Database nếu là cảnh báo (bad) hoặc có sự thay đổi dữ liệu (đăng ký/xóa)
+      // Các sự kiện mở cửa thành công (ok) sẽ bỏ qua không gọi DB
+      if (
+        data.status === "bad" ||
+        data.message.includes("Đã thêm") ||
+        data.message.includes("Đã xóa")
+      ) {
+        loadHistory();
+      }
     };
 
     socket.onerror = (err) => console.error("Lỗi WebSocket:", err);
@@ -66,31 +79,40 @@ export default function CameraDashboard() {
   );
 
   const selectedItems = historyByDate[selectedDate] || [];
+
   const getBadgeConfig = (status, uid) => {
     switch (status) {
-      // 1. Nhóm Khóa Hệ Thống (Sai quá 5 lần)
+      // 1. Nhóm Khóa Hệ Thống & Báo động nghiêm trọng (Đỏ / Đỏ sẫm)
       case "PASS_LOCKED":
         return {
           icon: <FiLock />,
           text: "Khóa Mật Khẩu",
-          style: "bg-red-500/10 text-red-400 border-red-500/30",
+          style:
+            "bg-red-500/10 text-red-400 border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.3)]",
         };
       case "RFID_LOCKED":
         return {
           icon: <FiCreditCard />,
           text: "Khóa Thẻ Từ",
-          style: "bg-red-500/10 text-red-400 border-red-500/30",
+          style:
+            "bg-red-500/10 text-red-400 border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.3)]",
         };
-
-      // 2. Nhóm Thành Công (Hợp lệ)
-      case "SUCCESS":
+      case "FACE_LOCKED":
         return {
-          icon: <FiUserCheck />,
-          text: "Khuôn mặt trùng khớp",
-          style: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+          icon: <FiUserX />,
+          text: "Khóa Face ID",
+          style:
+            "bg-red-500/10 text-red-400 border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.3)]",
+        };
+      case "CLONED_WARNING":
+        return {
+          icon: <FiAlertCircle />,
+          text: "Thẻ Giả Mạo",
+          style:
+            "bg-rose-500/10 text-rose-400 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]",
         };
 
-      // 3. Nhóm Quẹt Thẻ Hợp Lệ Nhưng Lỗi Khuôn Mặt
+      // 2. Nhóm Lỗi / Không Hợp Lệ (Hồng/Cam/Vàng)
       case "FAKE_OR_STRANGER":
         return {
           icon: <FiUserX />,
@@ -100,25 +122,39 @@ export default function CameraDashboard() {
       case "FACE_NOT_FOUND":
         return {
           icon: <FiAlertCircle />,
-          text: "Không Thấy Khuôn Mặt",
-          style: "bg-pink-500/10 text-pink-400 border-pink-500/30",
+          text: "Không Thấy Mặt",
+          style: "bg-orange-500/10 text-orange-400 border-orange-500/30",
         };
       case "NO_REGISTRATION_FACE":
         return {
           icon: <FiAlertCircle />,
           text: "Chưa Đăng Ký Mặt",
-          style: "bg-pink-500/10 text-pink-400 border-pink-500/30",
+          style: "bg-amber-500/10 text-amber-400 border-amber-500/30",
         };
-
-      // 4. Nhóm Bấm Nút # Nhận Diện Người Lạ
       case "UNKNOWN_FACE":
         return {
           icon: <FiUserX />,
           text: "Người Lạ Quét Mặt",
-          style: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+          style: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
         };
 
-      // Mặc định cho các trường hợp khác
+      // 3. Nhóm Đăng ký & Quản trị (Neon Cyan)
+      case "ADMIN_REGISTERED":
+        return {
+          icon: <FiUserCheck />,
+          text: "Đăng Ký Mới",
+          style:
+            "bg-cyan-500/10 text-cyan-400 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.3)]",
+        };
+
+      // 4. Legacy: Phục vụ dữ liệu cũ nếu còn tồn tại trong DB
+      case "SUCCESS":
+        return {
+          icon: <FiUserCheck />,
+          text: "Hợp lệ (Legacy)",
+          style: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+        };
+
       default:
         return {
           icon: <FiBarChart2 />,
@@ -127,6 +163,7 @@ export default function CameraDashboard() {
         };
     }
   };
+
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-white">
       <div className="flex justify-between items-center mb-8">
@@ -134,21 +171,21 @@ export default function CameraDashboard() {
 
         <button
           onClick={() => setAlbumOpen(true)}
-          className="px-5 py-2 flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 transition rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.5)]"
+          className="px-5 py-2 flex items-center gap-2 bg-rose-600 hover:bg-rose-500 transition rounded-xl shadow-[0_0_15px_rgba(225,29,72,0.4)] font-medium"
         >
-          <FiImage className="text-xl" />
-          Xem Lịch Sử
+          <FiShield className="text-xl" />
+          Cảnh Báo Bảo Mật
         </button>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+        {/* KHUNG LIVE CAMERA */}
         <div className="xl:col-span-2 flex flex-col gap-6">
           <div className="bg-slate-800 rounded-2xl p-6 w-full border border-slate-700 border-t-[6px] border-t-cyan-500 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] relative transition-all duration-300 hover:-translate-y-1">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold flex items-center gap-2 text-white">
                 <FiCamera className="text-cyan-400" /> Live Camera
               </h2>
-              {/* Badge LIVE có hiệu ứng nhấp nháy */}
               <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full">
                 <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 <span className="text-red-400 text-sm font-bold tracking-widest uppercase">
@@ -169,28 +206,35 @@ export default function CameraDashboard() {
           </div>
         </div>
 
+        {/* KHUNG LỊCH SỬ SỰ KIỆN LIVE (WEB SOCKET) */}
         <div className="xl:col-span-1 w-full flex flex-col gap-6">
           <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 border-t-[6px] border-t-cyan-500 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] relative transition-all duration-300 hover:-translate-y-1">
             <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
-              <FiBarChart2 /> Lịch sử sự kiện (Real-Time)
+              <FiBarChart2 /> Hoạt Động Gần Đây
             </h2>
 
-            <div className="max-h-56 overflow-y-auto space-y-3 pr-1">
+            <div className="max-h-[380px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {events.length === 0 && (
-                <div className="text-gray-500 italic">Đang chờ sự kiện...</div>
+                <div className="text-gray-500 italic text-center mt-6">
+                  Hệ thống đang hoạt động. Chờ sự kiện...
+                </div>
               )}
               {events.map((ev, i) => (
                 <div
                   key={i}
-                  className="p-3 bg-slate-900 border border-slate-700 rounded-xl text-gray-300 shadow-inner"
+                  className={`p-3 border rounded-xl shadow-inner flex flex-col gap-1.5 transition-all ${
+                    ev.status === "ok"
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                      : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                  }`}
                 >
-                  {ev.status === "ok" ? (
-                    <div className="text-green-400 font-medium">
-                      {ev.message}
-                    </div>
-                  ) : (
-                    <div className="text-red-400 font-medium">{ev.message}</div>
-                  )}
+                  <div className="flex justify-between items-start">
+                    <span className="font-semibold text-sm">{ev.message}</span>
+                    <span className="text-xs opacity-70 whitespace-nowrap ml-2">
+                      {ev.time}
+                    </span>
+                  </div>
+                  <div className="text-xs font-medium opacity-80 uppercase tracking-wide"></div>
                 </div>
               ))}
             </div>
@@ -198,33 +242,28 @@ export default function CameraDashboard() {
         </div>
       </div>
 
+      {/* MODAL CẢNH BÁO BẢO MẬT (CHỈ LƯU DATABASE) */}
       {albumOpen && (
         <div
-          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-          onClick={() =>
-            setAlbumOpen(false)
-          } /* CHIÊU 1: Đóng khi click vào màn đen */
+          className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setAlbumOpen(false)}
         >
           <div
             className="bg-slate-800 rounded-2xl shadow-2xl w-[90vw] max-w-6xl max-h-[90vh] flex flex-col border border-slate-700"
-            onClick={(e) =>
-              e.stopPropagation()
-            } /* Ngăn không cho click bên trong bị lan ra ngoài */
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* CHIÊU 2: Header cố định không cuộn */}
             <div className="p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
-              <h2 className="text-2xl font-semibold flex items-center gap-2 text-cyan-400">
-                <FiBarChart2 /> Lịch Sử Truy Cập
+              <h2 className="text-2xl font-semibold flex items-center gap-3 text-rose-400">
+                <FiShield /> Nhật Ký Cảnh Báo Bảo Mật
               </h2>
               <button
                 onClick={() => setAlbumOpen(false)}
-                className="px-5 py-2 rounded-lg bg-slate-700 hover:bg-red-500 hover:text-white transition-all font-medium shadow-md"
+                className="px-5 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-all font-medium shadow-md border border-slate-600"
               >
                 Đóng (Esc)
               </button>
             </div>
 
-            {/* Vùng nội dung có thể cuộn */}
             <div className="p-6 overflow-y-auto custom-scrollbar">
               <div className="flex items-center gap-2 mb-6">
                 <span className="text-sm text-gray-300 font-medium">
@@ -233,7 +272,7 @@ export default function CameraDashboard() {
                 <select
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm outline-none focus:border-cyan-500 text-cyan-300 font-medium cursor-pointer"
+                  className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm outline-none focus:border-rose-500 text-rose-300 font-medium cursor-pointer"
                 >
                   {sortedDates.map((d) => (
                     <option key={d} value={d}>
@@ -248,31 +287,30 @@ export default function CameraDashboard() {
                   {selectedItems.map((h) => (
                     <div
                       key={h.HistoryId}
-                      className="p-3 bg-slate-900 rounded-xl border border-slate-700 flex flex-col justify-between hover:border-cyan-500 transition-colors"
+                      className="p-3 bg-slate-900 rounded-xl border border-slate-700 flex flex-col justify-between hover:border-slate-500 transition-colors group"
                     >
                       <div>
-                        <img
-                          src={`${API_BASE_URL}/${h.ImageUrl}`}
-                          alt="Face Capture"
-                          className="w-full h-28 rounded-lg mb-3 object-cover border border-slate-700"
-                          onError={(e) => {
-                            e.target.src =
-                              "https://placehold.co/150x150/1e293b/06b6d4?text=No+Image";
-                          }}
-                        />
+                        <div className="overflow-hidden rounded-lg mb-3 border border-slate-700">
+                          <img
+                            src={`${API_BASE_URL}/${h.ImageUrl}`}
+                            alt="Face Capture"
+                            className="w-full h-28 object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              e.target.src =
+                                "https://placehold.co/150x150/1e293b/f43f5e?text=No+Image";
+                            }}
+                          />
+                        </div>
                         <div className="text-sm text-gray-400">
                           ID:{" "}
-                          <span className="text-cyan-400 font-bold">
-                            {h.UID}
-                          </span>
+                          <span className="text-white font-bold">{h.UID}</span>
                         </div>
-                        {/* Render Badge Trạng Thái */}
                         <div className="mt-2 flex">
                           {(() => {
                             const badge = getBadgeConfig(h.Status, h.UID);
                             return (
                               <div
-                                className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md border ${badge.style}`}
+                                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-md border ${badge.style}`}
                               >
                                 {badge.icon}
                                 <span className="truncate">{badge.text}</span>
@@ -281,15 +319,15 @@ export default function CameraDashboard() {
                           })()}
                         </div>
                       </div>
-                      <div className="text-xs text-slate-500 mt-3 text-right border-t border-slate-800 pt-2">
+                      <div className="text-xs font-mono text-slate-500 mt-3 text-right border-t border-slate-800 pt-2">
                         {new Date(h.CreatedDate).toLocaleTimeString()}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-sm text-slate-400 mt-8 text-center bg-slate-900/50 py-10 rounded-xl border border-slate-800 dashed">
-                  Không có dữ liệu lịch sử truy cập.
+                <div className="text-sm text-slate-400 mt-8 text-center bg-slate-900/50 py-12 rounded-xl border border-slate-800 border-dashed">
+                  ✅ Không có cảnh báo bảo mật nào trong ngày này.
                 </div>
               )}
             </div>
