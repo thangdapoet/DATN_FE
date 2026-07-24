@@ -9,10 +9,10 @@ import {
   FiCreditCard,
   FiLock,
   FiShield,
+  FiTrash2,
 } from "react-icons/fi";
 
 export default function CameraDashboard() {
-  // State cho Quản lý người dùng
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserManager, setShowUserManager] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
@@ -32,7 +32,22 @@ export default function CameraDashboard() {
   });
   const API_BASE_URL = "http://192.168.1.10:8000";
   const WS_URL = "ws://192.168.1.10:8000/ws/events";
+  const handleRemoteUnlock = async () => {
+    if (!window.confirm("Xác nhận MỞ CỬA từ xa?")) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/remote-unlock`, { method: "POST" });
+    } catch (err) {
+      alert("Lỗi kết nối Server");
+    }
+  };
 
+  const handleStopAlarm = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/api/remote-stop-alarm`, { method: "POST" });
+    } catch (err) {
+      alert("Lỗi kết nối Server");
+    }
+  };
   const handleVerifyAdmin = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/verify-admin`, {
@@ -47,7 +62,7 @@ export default function CameraDashboard() {
         setAdminPassword("");
         setAuthError("");
         setShowUserManager(true);
-        fetchUsers(); // Gọi API lấy danh sách sau khi pass
+        fetchUsers();
       } else {
         setAuthError(data.message);
       }
@@ -63,6 +78,29 @@ export default function CameraDashboard() {
       setRegisteredUsers(data.users);
     } catch (err) {
       console.error("Lỗi khi tải danh sách:", err);
+    }
+  };
+  const handleDeleteUser = async (uid) => {
+    const isConfirm = window.confirm(
+      `CẢNH BÁO: Bạn có chắc chắn muốn xóa hồ sơ gương mặt và vô hiệu hóa thẻ RFID của người dùng [${uid}] không?\n\nHành động này không thể hoàn tác!`,
+    );
+
+    if (!isConfirm) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/${uid}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+
+      if (data.status === "success") {
+        fetchUsers();
+      } else {
+        alert("Lỗi từ server: " + data.message);
+      }
+    } catch (err) {
+      console.error("Lỗi khi gọi API xóa:", err);
+      alert("Lỗi kết nối đến Server");
     }
   };
   const handleChangePassword = async () => {
@@ -133,14 +171,9 @@ export default function CameraDashboard() {
       const data = JSON.parse(event.data);
       console.log("🔔 Nhận sự kiện MQTT từ Backend:", data);
 
-      // Thêm Timestamp cho sự kiện Live
       const newEvent = { ...data, time: new Date().toLocaleTimeString() };
 
-      // Chỉ giữ tối đa 15 sự kiện mới nhất trên màn hình để không bị tràn UI
       setEvents((prevEvents) => [newEvent, ...prevEvents].slice(0, 15));
-
-      // TỐI ƯU: Chỉ fetch lại Database nếu là cảnh báo (bad) hoặc có sự thay đổi dữ liệu (đăng ký/xóa)
-      // Các sự kiện mở cửa thành công (ok) sẽ bỏ qua không gọi DB
       if (
         data.status === "bad" ||
         data.message.includes("Đã thêm") ||
@@ -163,7 +196,7 @@ export default function CameraDashboard() {
 
   const getBadgeConfig = (status, uid) => {
     switch (status) {
-      // 1. Nhóm Khóa Hệ Thống & Báo động nghiêm trọng (Đỏ / Đỏ sẫm)
+      //case bao dong
       case "SPAM_WARNING":
         return {
           icon: <FiAlertCircle />,
@@ -200,7 +233,7 @@ export default function CameraDashboard() {
             "bg-rose-500/10 text-rose-400 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]",
         };
 
-      // 2. Nhóm Lỗi / Không Hợp Lệ (Hồng/Cam/Vàng)
+      // case loi
       case "FAKE_OR_STRANGER":
         return {
           icon: <FiUserX />,
@@ -226,7 +259,6 @@ export default function CameraDashboard() {
           style: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
         };
 
-      // 3. Nhóm Đăng ký & Quản trị (Neon Cyan)
       case "ADMIN_REGISTERED":
         return {
           icon: <FiUserCheck />,
@@ -235,7 +267,6 @@ export default function CameraDashboard() {
             "bg-cyan-500/10 text-cyan-400 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.3)]",
         };
 
-      // 4. Legacy: Phục vụ dữ liệu cũ nếu còn tồn tại trong DB
       case "SUCCESS":
         return {
           icon: <FiUserCheck />,
@@ -257,7 +288,21 @@ export default function CameraDashboard() {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-semibold">Smart Cam Dashboard</h1>
         <div className="flex gap-4">
-          {/* Nút Mới: Quản lý người dùng */}
+          {/* NÚT TẮT BÁO ĐỘNG (Màu vàng) */}
+          <button
+            onClick={handleStopAlarm}
+            className="px-5 py-2 flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/50 transition rounded-xl font-medium"
+          >
+            Tắt Báo Động
+          </button>
+
+          {/* NÚT MỞ CỬA (Màu xanh lá) */}
+          <button
+            onClick={handleRemoteUnlock}
+            className="px-5 py-2 flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 transition rounded-xl font-medium shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+          >
+            Mở Cửa
+          </button>
           <button
             onClick={() => setShowAuthModal(true)}
             className="px-5 py-2 flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 transition rounded-xl font-medium"
@@ -276,7 +321,6 @@ export default function CameraDashboard() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        {/* KHUNG LIVE CAMERA */}
         <div className="xl:col-span-2 flex flex-col gap-6">
           <div className="bg-slate-800 rounded-2xl p-6 w-full border border-slate-700 border-t-[6px] border-t-cyan-500 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] relative transition-all duration-300 hover:-translate-y-1">
             <div className="flex justify-between items-center mb-4">
@@ -303,7 +347,6 @@ export default function CameraDashboard() {
           </div>
         </div>
 
-        {/* KHUNG LỊCH SỬ SỰ KIỆN LIVE (WEB SOCKET) */}
         <div className="xl:col-span-1 w-full flex flex-col gap-6">
           <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 border-t-[6px] border-t-cyan-500 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] relative transition-all duration-300 hover:-translate-y-1">
             <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
@@ -339,7 +382,6 @@ export default function CameraDashboard() {
         </div>
       </div>
 
-      {/* MODAL CẢNH BÁO BẢO MẬT (CHỈ LƯU DATABASE) */}
       {albumOpen && (
         <div
           className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -424,7 +466,7 @@ export default function CameraDashboard() {
                 </div>
               ) : (
                 <div className="text-sm text-slate-400 mt-8 text-center bg-slate-900/50 py-12 rounded-xl border border-slate-800 border-dashed">
-                  ✅ Không có cảnh báo bảo mật nào trong ngày này.
+                  Không có cảnh báo bảo mật nào trong ngày này.
                 </div>
               )}
             </div>
@@ -476,7 +518,6 @@ export default function CameraDashboard() {
         </div>
       )}
 
-      {/* 2. MODAL DANH SÁCH NGƯỜI DÙNG */}
       {showUserManager && (
         <div
           className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm"
@@ -510,8 +551,16 @@ export default function CameraDashboard() {
                 {registeredUsers.map((user, idx) => (
                   <div
                     key={idx}
-                    className="bg-slate-900 rounded-xl border border-slate-700 p-3 flex flex-col items-center hover:border-cyan-500 transition-colors group"
+                    className="bg-slate-900 rounded-xl border border-slate-700 p-3 flex flex-col items-center hover:border-cyan-500 transition-colors group relative"
                   >
+                    <button
+                      onClick={() => handleDeleteUser(user.uid)}
+                      className="absolute top-2 right-2 bg-red-600/90 hover:bg-red-500 text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10 shadow-[0_0_10px_rgba(220,38,38,0.5)]"
+                      title="Xóa hồ sơ và thẻ"
+                    >
+                      <FiTrash2 className="text-lg" />
+                    </button>
+
                     <div className="w-full aspect-square rounded-lg overflow-hidden border border-slate-800 mb-3 relative">
                       <img
                         src={`${API_BASE_URL}/${user.image_url}`}
