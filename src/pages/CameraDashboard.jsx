@@ -12,14 +12,95 @@ import {
 } from "react-icons/fi";
 
 export default function CameraDashboard() {
+  // State cho Quản lý người dùng
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showUserManager, setShowUserManager] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [registeredUsers, setRegisteredUsers] = useState([]);
+
   const [historyByDate, setHistoryByDate] = useState({});
   const [selectedDate, setSelectedDate] = useState("");
   const [events, setEvents] = useState([]);
   const [albumOpen, setAlbumOpen] = useState(false);
 
+  const [showChangePassModal, setShowChangePassModal] = useState(false);
+  const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
+  const [changePassStatus, setChangePassStatus] = useState({
+    type: "",
+    message: "",
+  });
   const API_BASE_URL = "http://192.168.1.10:8000";
   const WS_URL = "ws://192.168.1.10:8000/ws/events";
 
+  const handleVerifyAdmin = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/verify-admin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      const data = await res.json();
+
+      if (data.status === "success") {
+        setShowAuthModal(false);
+        setAdminPassword("");
+        setAuthError("");
+        setShowUserManager(true);
+        fetchUsers(); // Gọi API lấy danh sách sau khi pass
+      } else {
+        setAuthError(data.message);
+      }
+    } catch (err) {
+      setAuthError("Lỗi kết nối đến Server");
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users`);
+      const data = await res.json();
+      setRegisteredUsers(data.users);
+    } catch (err) {
+      console.error("Lỗi khi tải danh sách:", err);
+    }
+  };
+  const handleChangePassword = async () => {
+    setChangePassStatus({ type: "", message: "" });
+
+    if (passwords.new !== passwords.confirm) {
+      setChangePassStatus({
+        type: "error",
+        message: "Mật khẩu xác nhận không khớp!",
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/change-admin-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          old_password: passwords.old,
+          new_password: passwords.new,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.status === "success") {
+        setChangePassStatus({ type: "success", message: data.message });
+        setTimeout(() => {
+          setShowChangePassModal(false);
+          setPasswords({ old: "", new: "", confirm: "" });
+          setChangePassStatus({ type: "", message: "" });
+        }, 1500);
+      } else {
+        setChangePassStatus({ type: "error", message: data.message });
+      }
+    } catch (err) {
+      setChangePassStatus({ type: "error", message: "Lỗi kết nối đến Server" });
+    }
+  };
   const loadHistory = async () => {
     try {
       const data = await getHistoryGroupedByDateAsync();
@@ -83,6 +164,13 @@ export default function CameraDashboard() {
   const getBadgeConfig = (status, uid) => {
     switch (status) {
       // 1. Nhóm Khóa Hệ Thống & Báo động nghiêm trọng (Đỏ / Đỏ sẫm)
+      case "SPAM_WARNING":
+        return {
+          icon: <FiAlertCircle />,
+          text: "Spam Thẻ",
+          style:
+            "bg-rose-500/10 text-rose-400 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]",
+        };
       case "PASS_LOCKED":
         return {
           icon: <FiLock />,
@@ -168,14 +256,23 @@ export default function CameraDashboard() {
     <div className="min-h-screen bg-slate-900 p-6 text-white">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-semibold">Smart Cam Dashboard</h1>
-
-        <button
-          onClick={() => setAlbumOpen(true)}
-          className="px-5 py-2 flex items-center gap-2 bg-rose-600 hover:bg-rose-500 transition rounded-xl shadow-[0_0_15px_rgba(225,29,72,0.4)] font-medium"
-        >
-          <FiShield className="text-xl" />
-          Cảnh Báo Bảo Mật
-        </button>
+        <div className="flex gap-4">
+          {/* Nút Mới: Quản lý người dùng */}
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="px-5 py-2 flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 transition rounded-xl font-medium"
+          >
+            <FiUserCheck className="text-xl" />
+            Hồ Sơ
+          </button>
+          <button
+            onClick={() => setAlbumOpen(true)}
+            className="px-5 py-2 flex items-center gap-2 bg-rose-600 hover:bg-rose-500 transition rounded-xl shadow-[0_0_15px_rgba(225,29,72,0.4)] font-medium"
+          >
+            <FiShield className="text-xl" />
+            Cảnh Báo Bảo Mật
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
@@ -330,6 +427,181 @@ export default function CameraDashboard() {
                   ✅ Không có cảnh báo bảo mật nào trong ngày này.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 1. MODAL NHẬP MẬT KHẨU */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md border border-slate-700 flex flex-col items-center">
+            <div className="w-16 h-16 rounded-full bg-slate-900 border border-cyan-500/50 flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+              <FiLock className="text-3xl text-cyan-400" />
+            </div>
+            <h2 className="text-2xl font-semibold mb-2">Xác thực</h2>
+
+            <input
+              type="password"
+              placeholder="Nhập mật khẩu..."
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleVerifyAdmin()}
+              className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500 mb-2 transition-colors text-center tracking-widest"
+              autoFocus
+            />
+            {authError && (
+              <p className="text-rose-400 text-sm font-medium mb-4">
+                {authError}
+              </p>
+            )}
+
+            <div className="flex gap-3 w-full mt-4">
+              <button
+                onClick={() => {
+                  setShowAuthModal(false);
+                  setAuthError("");
+                }}
+                className="flex-1 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 font-medium transition"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleVerifyAdmin}
+                className="flex-1 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 font-medium transition shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. MODAL DANH SÁCH NGƯỜI DÙNG */}
+      {showUserManager && (
+        <div
+          className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setShowUserManager(false)}
+        >
+          <div
+            className="bg-slate-800 rounded-2xl shadow-2xl w-[90vw] max-w-5xl max-h-[85vh] flex flex-col border border-slate-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+              <h2 className="text-2xl font-semibold flex items-center gap-3 text-cyan-400">
+                Hồ sơ đã đăng ký ({registeredUsers.length})
+              </h2>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowChangePassModal(true)}
+                  className="px-5 py-2 rounded-lg bg-slate-700 hover:bg-cyan-600 text-white transition-all font-medium border border-slate-600 hover:border-cyan-500"
+                >
+                  Đổi mật khẩu
+                </button>
+                <button
+                  onClick={() => setShowUserManager(false)}
+                  className="px-5 py-2 rounded-lg bg-slate-700 hover:bg-rose-500 transition-all font-medium"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                {registeredUsers.map((user, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-slate-900 rounded-xl border border-slate-700 p-3 flex flex-col items-center hover:border-cyan-500 transition-colors group"
+                  >
+                    <div className="w-full aspect-square rounded-lg overflow-hidden border border-slate-800 mb-3 relative">
+                      <img
+                        src={`${API_BASE_URL}/${user.image_url}`}
+                        alt={user.uid}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                        onError={(e) => {
+                          e.target.src =
+                            "https://placehold.co/200x200/1e293b/06b6d4?text=No+Face";
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
+                      UID
+                    </span>
+                    <span className="text-lg font-bold text-white tracking-wider">
+                      {user.uid}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {registeredUsers.length === 0 && (
+                <div className="text-center text-slate-400 py-12 border border-slate-700 border-dashed rounded-xl bg-slate-900/50">
+                  Không có dữ liệu khuôn mặt nào được đăng ký.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 3. MODAL ĐỔI MẬT KHẨU WEB ADMIN */}
+      {showChangePassModal && (
+        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md border border-slate-700 flex flex-col">
+            <h2 className="text-2xl font-semibold mb-6 text-center text-cyan-400">
+              Đổi mật khẩu
+            </h2>
+
+            <input
+              type="password"
+              placeholder="Mật khẩu cũ"
+              value={passwords.old}
+              onChange={(e) =>
+                setPasswords({ ...passwords, old: e.target.value })
+              }
+              className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500 mb-4 transition-colors"
+            />
+            <input
+              type="password"
+              placeholder="Mật khẩu mới"
+              value={passwords.new}
+              onChange={(e) =>
+                setPasswords({ ...passwords, new: e.target.value })
+              }
+              className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500 mb-4 transition-colors"
+            />
+            <input
+              type="password"
+              placeholder="Xác nhận mật khẩu mới"
+              value={passwords.confirm}
+              onChange={(e) =>
+                setPasswords({ ...passwords, confirm: e.target.value })
+              }
+              className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500 mb-4 transition-colors"
+            />
+
+            {changePassStatus.message && (
+              <p
+                className={`text-sm font-medium mb-4 text-center ${changePassStatus.type === "error" ? "text-rose-400" : "text-emerald-400"}`}
+              >
+                {changePassStatus.message}
+              </p>
+            )}
+
+            <div className="flex gap-3 w-full mt-2">
+              <button
+                onClick={() => {
+                  setShowChangePassModal(false);
+                  setChangePassStatus({ type: "", message: "" });
+                }}
+                className="flex-1 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 font-medium transition"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleChangePassword}
+                className="flex-1 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 font-medium transition shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+              >
+                Cập nhật
+              </button>
             </div>
           </div>
         </div>
