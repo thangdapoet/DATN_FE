@@ -133,7 +133,7 @@ export default function CameraDashboard() {
     if (passwords.new !== passwords.confirm) {
       setChangePassStatus({
         type: "error",
-        message: "Mật khẩu xác nhận không khớp!",
+        message: "Mật khẩu xác nhận không khớp",
       });
       return;
     }
@@ -314,7 +314,7 @@ export default function CameraDashboard() {
         <div className="flex gap-4">
           {/* nut tat bao dong */}
           <button
-            onClick={handleStopAlarmClick} // <-- SỬA Ở ĐÂY
+            onClick={handleStopAlarmClick}
             className="px-5 py-2 flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/50 transition rounded-xl font-medium"
           >
             Tắt Báo Động
@@ -322,7 +322,7 @@ export default function CameraDashboard() {
 
           {/* nut mo cua */}
           <button
-            onClick={handleRemoteUnlockClick} // <-- SỬA Ở ĐÂY
+            onClick={handleRemoteUnlockClick} //
             className="px-5 py-2 flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 transition rounded-xl font-medium shadow-[0_0_10px_rgba(16,185,129,0.2)]"
           >
             Mở Cửa
@@ -330,7 +330,7 @@ export default function CameraDashboard() {
 
           {/* nut ho so */}
           <button
-            onClick={handleUserManagerClick} // <-- SỬA Ở ĐÂY
+            onClick={handleUserManagerClick} //
             className="px-5 py-2 flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 transition rounded-xl font-medium"
           >
             <FiUserCheck className="text-xl" />
