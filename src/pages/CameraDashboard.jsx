@@ -18,6 +18,7 @@ export default function CameraDashboard() {
   const [adminPassword, setAdminPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [pendingAction, setPendingAction] = useState("");
 
   const [historyByDate, setHistoryByDate] = useState({});
   const [selectedDate, setSelectedDate] = useState("");
@@ -32,8 +33,23 @@ export default function CameraDashboard() {
   });
   const API_BASE_URL = "http://192.168.1.10:8000";
   const WS_URL = "ws://192.168.1.10:8000/ws/events";
-  const handleRemoteUnlock = async () => {
-    if (!window.confirm("Xác nhận MỞ CỬA từ xa?")) return;
+
+  const handleRemoteUnlockClick = () => {
+    setPendingAction("unlock");
+    setShowAuthModal(true);
+  };
+
+  const handleStopAlarmClick = () => {
+    setPendingAction("stopAlarm");
+    setShowAuthModal(true);
+  };
+
+  const handleUserManagerClick = () => {
+    setPendingAction("userManager");
+    setShowAuthModal(true);
+  };
+
+  const executeRemoteUnlock = async () => {
     try {
       await fetch(`${API_BASE_URL}/api/remote-unlock`, { method: "POST" });
     } catch (err) {
@@ -41,13 +57,14 @@ export default function CameraDashboard() {
     }
   };
 
-  const handleStopAlarm = async () => {
+  const executeStopAlarm = async () => {
     try {
       await fetch(`${API_BASE_URL}/api/remote-stop-alarm`, { method: "POST" });
     } catch (err) {
       alert("Lỗi kết nối Server");
     }
   };
+
   const handleVerifyAdmin = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/verify-admin`, {
@@ -61,8 +78,15 @@ export default function CameraDashboard() {
         setShowAuthModal(false);
         setAdminPassword("");
         setAuthError("");
-        setShowUserManager(true);
-        fetchUsers();
+        if (pendingAction === "userManager") {
+          setShowUserManager(true);
+          fetchUsers();
+        } else if (pendingAction === "unlock") {
+          executeRemoteUnlock();
+        } else if (pendingAction === "stopAlarm") {
+          executeStopAlarm();
+        }
+        setPendingAction("");
       } else {
         setAuthError(data.message);
       }
@@ -288,23 +312,25 @@ export default function CameraDashboard() {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-semibold">Smart Cam Dashboard</h1>
         <div className="flex gap-4">
-          {/* NÚT TẮT BÁO ĐỘNG (Màu vàng) */}
+          {/* nut tat bao dong */}
           <button
-            onClick={handleStopAlarm}
+            onClick={handleStopAlarmClick} // <-- SỬA Ở ĐÂY
             className="px-5 py-2 flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/50 transition rounded-xl font-medium"
           >
             Tắt Báo Động
           </button>
 
-          {/* NÚT MỞ CỬA (Màu xanh lá) */}
+          {/* nut mo cua */}
           <button
-            onClick={handleRemoteUnlock}
+            onClick={handleRemoteUnlockClick} // <-- SỬA Ở ĐÂY
             className="px-5 py-2 flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 transition rounded-xl font-medium shadow-[0_0_10px_rgba(16,185,129,0.2)]"
           >
             Mở Cửa
           </button>
+
+          {/* nut ho so */}
           <button
-            onClick={() => setShowAuthModal(true)}
+            onClick={handleUserManagerClick} // <-- SỬA Ở ĐÂY
             className="px-5 py-2 flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 transition rounded-xl font-medium"
           >
             <FiUserCheck className="text-xl" />
@@ -473,7 +499,7 @@ export default function CameraDashboard() {
           </div>
         </div>
       )}
-      {/* 1. MODAL NHẬP MẬT KHẨU */}
+      {/* modal nhap mat khau*/}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md border border-slate-700 flex flex-col items-center">
@@ -591,7 +617,7 @@ export default function CameraDashboard() {
           </div>
         </div>
       )}
-      {/* 3. MODAL ĐỔI MẬT KHẨU WEB ADMIN */}
+      {/* modal doi mat khau */}
       {showChangePassModal && (
         <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md border border-slate-700 flex flex-col">
