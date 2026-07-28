@@ -10,6 +10,7 @@ import {
   FiLock,
   FiShield,
   FiTrash2,
+  FiFilter, // Import thêm icon bộ lọc
 } from "react-icons/fi";
 
 export default function CameraDashboard() {
@@ -25,15 +26,94 @@ export default function CameraDashboard() {
   const [events, setEvents] = useState([]);
   const [albumOpen, setAlbumOpen] = useState(false);
 
+  // --- STATE MỚI CHO BỘ LỌC ---
+  const [showFilter, setShowFilter] = useState(false);
+  const [appliedEvents, setAppliedEvents] = useState([]);
+  const [appliedUIDs, setAppliedUIDs] = useState([]);
+  const [tempEvents, setTempEvents] = useState([]);
+  const [tempUIDs, setTempUIDs] = useState([]);
+
   const [showChangePassModal, setShowChangePassModal] = useState(false);
   const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
   const [changePassStatus, setChangePassStatus] = useState({
     type: "",
     message: "",
   });
+
   const API_BASE_URL = "http://192.168.1.10:8000";
   const WS_URL = "ws://192.168.1.10:8000/ws/events";
 
+  // --- LOGIC XỬ LÝ BỘ LỌC ---
+  // Các sự kiện cố định dựa trên backend
+  const fixedEvents = [
+    { id: "UNKNOWN_FACE", label: "Người lạ quét mặt" },
+    { id: "ADMIN_REGISTERED", label: "Đăng ký mới" },
+    { id: "PASS_LOCKED", label: "Khóa mật khẩu" },
+    { id: "RFID_LOCKED", label: "Khóa thẻ từ" },
+    { id: "FACE_LOCKED", label: "Khóa Face ID" },
+    { id: "CLONED_WARNING", label: "Thẻ giả mạo" },
+    { id: "FAKE_OR_STRANGER", label: "Mặt không khớp" },
+    { id: "SPAM_WARNING", label: "Spam thẻ" },
+    { id: "NO_REGISTRATION_FACE", label: "Chưa đăng ký mặt" },
+    { id: "FACE_NOT_FOUND", label: "Không thấy mặt" },
+    { id: "WEB_REMOTE_UNLOCK", label: "Mở cửa qua Web" },
+    { id: "WEB_STOPPED_ALARM", label: "Tắt báo động qua Web" },
+    { id: "WEB_ADMIN_DELETED", label: "Xóa hồ sơ qua Web" },
+  ];
+
+  const baseItems = historyByDate[selectedDate] || [];
+
+  // Trích xuất UID động (chỉ lấy các UID xuất hiện trong ngày đang chọn)
+  const uniqueUIDs = [...new Set(baseItems.map((h) => h.UID))]
+    .filter(Boolean)
+    .filter((uid) => uid !== "WEB_ADMIN" && uid !== "UNKNOWN");
+
+  // Tính toán số kết quả sẽ hiển thị nếu bấm Áp dụng
+  const tempFilteredCount = baseItems.filter((item) => {
+    const matchEvent =
+      tempEvents.length === 0 || tempEvents.includes(item.Status);
+    const matchUID = tempUIDs.length === 0 || tempUIDs.includes(item.UID);
+    return matchEvent && matchUID;
+  }).length;
+
+  // Dữ liệu thực tế được hiển thị trên UI
+  const displayedItems = baseItems.filter((item) => {
+    const matchEvent =
+      appliedEvents.length === 0 || appliedEvents.includes(item.Status);
+    const matchUID = appliedUIDs.length === 0 || appliedUIDs.includes(item.UID);
+    return matchEvent && matchUID;
+  });
+
+  const toggleTempEvent = (id) => {
+    setTempEvents((prev) =>
+      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id],
+    );
+  };
+
+  const toggleTempUID = (uid) => {
+    setTempUIDs((prev) =>
+      prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid],
+    );
+  };
+
+  const handleApplyFilter = () => {
+    setAppliedEvents(tempEvents);
+    setAppliedUIDs(tempUIDs);
+    setShowFilter(false);
+  };
+
+  const handleClearFilter = () => {
+    setTempEvents([]);
+    setTempUIDs([]);
+  };
+
+  const openFilterPanel = () => {
+    setTempEvents(appliedEvents);
+    setTempUIDs(appliedUIDs);
+    setShowFilter(true);
+  };
+
+  // Các hàm API giữ nguyên
   const handleRemoteUnlockClick = () => {
     setPendingAction("unlock");
     setShowAuthModal(true);
@@ -104,6 +184,7 @@ export default function CameraDashboard() {
       console.error("Lỗi khi tải danh sách:", err);
     }
   };
+
   const handleDeleteUser = async (uid) => {
     const isConfirm = window.confirm(
       `CẢNH BÁO: Bạn có chắc chắn muốn xóa hồ sơ gương mặt và vô hiệu hóa thẻ RFID của người dùng [${uid}] không?\n\nHành động này không thể hoàn tác!`,
@@ -127,6 +208,7 @@ export default function CameraDashboard() {
       alert("Lỗi kết nối đến Server");
     }
   };
+
   const handleChangePassword = async () => {
     setChangePassStatus({ type: "", message: "" });
 
@@ -163,6 +245,7 @@ export default function CameraDashboard() {
       setChangePassStatus({ type: "error", message: "Lỗi kết nối đến Server" });
     }
   };
+
   const loadHistory = async () => {
     try {
       const data = await getHistoryGroupedByDateAsync();
@@ -188,12 +271,12 @@ export default function CameraDashboard() {
     const socket = new WebSocket(WS_URL);
 
     socket.onopen = () => {
-      console.log("🟢 Đã kết nối WebSocket tới Server Python!");
+      console.log("Đã kết nối WebSocket tới Server Python!");
     };
 
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log("🔔 Nhận sự kiện MQTT từ Backend:", data);
+      console.log("Nhận sự kiện MQTT từ Backend:", data);
 
       const newEvent = { ...data, time: new Date().toLocaleTimeString() };
 
@@ -216,11 +299,8 @@ export default function CameraDashboard() {
     (a, b) => new Date(b) - new Date(a),
   );
 
-  const selectedItems = historyByDate[selectedDate] || [];
-
   const getBadgeConfig = (status, uid) => {
     switch (status) {
-      //case bao dong
       case "SPAM_WARNING":
         return {
           icon: <FiAlertCircle />,
@@ -256,12 +336,10 @@ export default function CameraDashboard() {
           style:
             "bg-rose-500/10 text-rose-400 border-rose-500/50 shadow-[0_0_8px_rgba(244,63,94,0.3)]",
         };
-
-      // case loi
       case "FAKE_OR_STRANGER":
         return {
           icon: <FiUserX />,
-          text: "Khuôn mặt không khớp",
+          text: "Mặt không khớp",
           style: "bg-pink-500/10 text-pink-400 border-pink-500/30",
         };
       case "FACE_NOT_FOUND":
@@ -282,7 +360,6 @@ export default function CameraDashboard() {
           text: "Người Lạ Quét Mặt",
           style: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
         };
-
       case "ADMIN_REGISTERED":
         return {
           icon: <FiUserCheck />,
@@ -290,14 +367,32 @@ export default function CameraDashboard() {
           style:
             "bg-cyan-500/10 text-cyan-400 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.3)]",
         };
-
       case "SUCCESS":
         return {
           icon: <FiUserCheck />,
-          text: "Hợp lệ (Legacy)",
+          text: "Hợp lệ",
           style: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
         };
-
+      case "WEB_REMOTE_UNLOCK":
+        return {
+          icon: <FiLock />, // Hoặc icon Unlock nếu bạn đã import
+          text: "Mở Cửa (Web)",
+          style:
+            "bg-emerald-500/10 text-emerald-400 border-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.3)]",
+        };
+      case "WEB_STOPPED_ALARM":
+        return {
+          icon: <FiShield />,
+          text: "Tắt Báo Động (Web)",
+          style:
+            "bg-yellow-500/10 text-yellow-400 border-yellow-500/50 shadow-[0_0_8px_rgba(234,179,8,0.3)]",
+        };
+      case "WEB_ADMIN_DELETED":
+        return {
+          icon: <FiTrash2 />,
+          text: "Xóa Hồ Sơ (Web)",
+          style: "bg-slate-500/10 text-slate-400 border-slate-500/50",
+        };
       default:
         return {
           icon: <FiBarChart2 />,
@@ -312,40 +407,34 @@ export default function CameraDashboard() {
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-semibold">SECURITY HUB</h1>
         <div className="flex gap-4">
-          {/* nut tat bao dong */}
           <button
             onClick={handleStopAlarmClick}
             className="px-5 py-2 flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/50 transition rounded-xl font-medium"
           >
             Tắt Báo Động
           </button>
-
-          {/* nut mo cua */}
           <button
-            onClick={handleRemoteUnlockClick} //
+            onClick={handleRemoteUnlockClick}
             className="px-5 py-2 flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 transition rounded-xl font-medium shadow-[0_0_10px_rgba(16,185,129,0.2)]"
           >
             Mở Cửa
           </button>
-
-          {/* nut ho so */}
           <button
-            onClick={handleUserManagerClick} //
+            onClick={handleUserManagerClick}
             className="px-5 py-2 flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 transition rounded-xl font-medium"
           >
-            <FiUserCheck className="text-xl" />
-            Hồ Sơ
+            <FiUserCheck className="text-xl" /> Hồ Sơ
           </button>
           <button
             onClick={() => setAlbumOpen(true)}
             className="px-5 py-2 flex items-center gap-2 bg-rose-600 hover:bg-rose-500 transition rounded-xl shadow-[0_0_15px_rgba(225,29,72,0.4)] font-medium"
           >
-            <FiShield className="text-xl" />
-            Cảnh Báo Bảo Mật
+            <FiShield className="text-xl" /> Cảnh Báo Bảo Mật
           </button>
         </div>
       </div>
 
+      {/* DASHBOARD CAMERA */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
         <div className="xl:col-span-2 flex flex-col gap-6">
           <div className="bg-slate-800 rounded-2xl p-6 w-full border border-slate-700 border-t-[6px] border-t-cyan-500 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] relative transition-all duration-300 hover:-translate-y-1">
@@ -360,7 +449,6 @@ export default function CameraDashboard() {
                 </span>
               </div>
             </div>
-
             <div className="flex justify-center w-full">
               <div className="w-full max-w-[720px] bg-black rounded-2xl overflow-hidden border border-gray-700">
                 <img
@@ -372,13 +460,11 @@ export default function CameraDashboard() {
             </div>
           </div>
         </div>
-
         <div className="xl:col-span-1 w-full flex flex-col gap-6">
           <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 border-t-[6px] border-t-cyan-500 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] relative transition-all duration-300 hover:-translate-y-1">
             <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
               <FiBarChart2 /> Hoạt Động Gần Đây
             </h2>
-
             <div className="max-h-[380px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {events.length === 0 && (
                 <div className="text-gray-500 italic text-center mt-6">
@@ -388,11 +474,7 @@ export default function CameraDashboard() {
               {events.map((ev, i) => (
                 <div
                   key={i}
-                  className={`p-3 border rounded-xl shadow-inner flex flex-col gap-1.5 transition-all ${
-                    ev.status === "ok"
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                      : "bg-rose-500/10 border-rose-500/30 text-rose-400"
-                  }`}
+                  className={`p-3 border rounded-xl shadow-inner flex flex-col gap-1.5 transition-all ${ev.status === "ok" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" : "bg-rose-500/10 border-rose-500/30 text-rose-400"}`}
                 >
                   <div className="flex justify-between items-start">
                     <span className="font-semibold text-sm">{ev.message}</span>
@@ -400,7 +482,6 @@ export default function CameraDashboard() {
                       {ev.time}
                     </span>
                   </div>
-                  <div className="text-xs font-medium opacity-80 uppercase tracking-wide"></div>
                 </div>
               ))}
             </div>
@@ -408,6 +489,7 @@ export default function CameraDashboard() {
         </div>
       </div>
 
+      {/* MODAL ALBUM BẢO MẬT & BỘ LỌC */}
       {albumOpen && (
         <div
           className="fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -430,26 +512,117 @@ export default function CameraDashboard() {
             </div>
 
             <div className="p-6 overflow-y-auto custom-scrollbar">
-              <div className="flex items-center gap-2 mb-6">
-                <span className="text-sm text-gray-300 font-medium">
-                  Chọn Ngày:
-                </span>
-                <select
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm outline-none focus:border-rose-500 text-rose-300 font-medium cursor-pointer"
-                >
-                  {sortedDates.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
+              {/* THANH CÔNG CỤ: NGÀY & LỌC */}
+              <div className="flex justify-between items-center mb-6 relative">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-300 font-medium">
+                      Chọn ngày:
+                    </span>
+                    <select
+                      value={selectedDate}
+                      onChange={(e) => {
+                        setSelectedDate(e.target.value);
+                        // Khi đổi ngày có thể clear bộ lọc hoặc giữ nguyên, ở đây ta giữ nguyên state
+                      }}
+                      className="bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-sm outline-none focus:border-rose-500 text-rose-300 font-medium cursor-pointer"
+                    >
+                      {sortedDates.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={openFilterPanel}
+                    className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-medium transition-colors ${appliedEvents.length > 0 || appliedUIDs.length > 0 ? "border-cyan-500 text-cyan-400 bg-cyan-500/10" : "border-slate-600 text-slate-300 hover:bg-slate-700"}`}
+                  >
+                    <FiFilter /> Lọc{" "}
+                    {(appliedEvents.length > 0 || appliedUIDs.length > 0) &&
+                      `(${appliedEvents.length + appliedUIDs.length})`}
+                  </button>
+                </div>
+
+                {/* PANEL BỘ LỌC (GIỐNG TGDĐ) */}
+                {showFilter && (
+                  <div className="absolute top-12 left-0 w-full max-w-2xl bg-slate-800 border border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 p-6 flex flex-col gap-6">
+                    <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                      <h3 className="font-semibold text-lg text-white">
+                        Tất cả bộ lọc
+                      </h3>
+                      <button
+                        onClick={() => setShowFilter(false)}
+                        className="text-slate-400 hover:text-white px-3 py-1 border border-slate-600 hover:border-slate-400 rounded transition-colors text-sm"
+                      >
+                        ✕ Đóng
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-6 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                      {/* Section Sự Kiện */}
+                      <div>
+                        <h4 className="text-slate-300 font-medium mb-3">
+                          Loại sự kiện
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {fixedEvents.map((ev) => (
+                            <button
+                              key={ev.id}
+                              onClick={() => toggleTempEvent(ev.id)}
+                              className={`px-4 py-2 border rounded-md text-sm transition-colors ${tempEvents.includes(ev.id) ? "border-cyan-500 text-cyan-400 bg-cyan-500/10" : "border-slate-600 text-slate-400 hover:border-slate-500 bg-slate-900/50"}`}
+                            >
+                              {ev.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Section UID (Hiển thị động) */}
+                      {uniqueUIDs.length > 0 && (
+                        <div>
+                          <h4 className="text-slate-300 font-medium mb-3">
+                            UID Thẻ
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {uniqueUIDs.map((uid) => (
+                              <button
+                                key={uid}
+                                onClick={() => toggleTempUID(uid)}
+                                className={`px-4 py-2 border rounded-md text-sm transition-colors ${tempUIDs.includes(uid) ? "border-cyan-500 text-cyan-400 bg-cyan-500/10" : "border-slate-600 text-slate-400 hover:border-slate-500 bg-slate-900/50"}`}
+                              >
+                                {uid}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className="flex justify-center gap-4 border-t border-slate-700 pt-4 mt-2">
+                      <button
+                        onClick={handleClearFilter}
+                        className="px-6 py-2 border border-rose-500 text-rose-500 hover:bg-rose-500/10 rounded-md transition font-medium"
+                      >
+                        Bỏ chọn
+                      </button>
+                      <button
+                        onClick={handleApplyFilter}
+                        className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md transition font-medium shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                      >
+                        Xem {tempFilteredCount} kết quả
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {selectedDate && selectedItems.length > 0 ? (
+              {/* LƯỚI HIỂN THỊ KẾT QUẢ ĐÃ ĐƯỢC LỌC */}
+              {selectedDate && displayedItems.length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {selectedItems.map((h) => (
+                  {displayedItems.map((h) => (
                     <div
                       key={h.HistoryId}
                       className="p-3 bg-slate-900 rounded-xl border border-slate-700 flex flex-col justify-between hover:border-slate-500 transition-colors group"
@@ -492,14 +665,15 @@ export default function CameraDashboard() {
                 </div>
               ) : (
                 <div className="text-sm text-slate-400 mt-8 text-center bg-slate-900/50 py-12 rounded-xl border border-slate-800 border-dashed">
-                  Không có cảnh báo bảo mật nào trong ngày này.
+                  Không tìm thấy cảnh báo nào phù hợp với bộ lọc trong ngày này.
                 </div>
               )}
             </div>
           </div>
         </div>
       )}
-      {/* modal nhap mat khau*/}
+
+      {/* Các modal khác (Xác thực, Quản lý User, Đổi mật khẩu) giữ nguyên không thay đổi... */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md border border-slate-700 flex flex-col items-center">
@@ -507,7 +681,6 @@ export default function CameraDashboard() {
               <FiLock className="text-3xl text-cyan-400" />
             </div>
             <h2 className="text-2xl font-semibold mb-2">Xác thực</h2>
-
             <input
               type="password"
               placeholder="Nhập mật khẩu..."
@@ -522,7 +695,6 @@ export default function CameraDashboard() {
                 {authError}
               </p>
             )}
-
             <div className="flex gap-3 w-full mt-4">
               <button
                 onClick={() => {
@@ -586,7 +758,6 @@ export default function CameraDashboard() {
                     >
                       <FiTrash2 className="text-lg" />
                     </button>
-
                     <div className="w-full aspect-square rounded-lg overflow-hidden border border-slate-800 mb-3 relative">
                       <img
                         src={`${API_BASE_URL}/${user.image_url}`}
@@ -607,7 +778,6 @@ export default function CameraDashboard() {
                   </div>
                 ))}
               </div>
-
               {registeredUsers.length === 0 && (
                 <div className="text-center text-slate-400 py-12 border border-slate-700 border-dashed rounded-xl bg-slate-900/50">
                   Không có dữ liệu khuôn mặt nào được đăng ký.
@@ -617,14 +787,13 @@ export default function CameraDashboard() {
           </div>
         </div>
       )}
-      {/* modal doi mat khau */}
+
       {showChangePassModal && (
         <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md border border-slate-700 flex flex-col">
             <h2 className="text-2xl font-semibold mb-6 text-center text-cyan-400">
               Đổi mật khẩu
             </h2>
-
             <input
               type="password"
               placeholder="Mật khẩu cũ"
@@ -652,7 +821,6 @@ export default function CameraDashboard() {
               }
               className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white outline-none focus:border-cyan-500 mb-4 transition-colors"
             />
-
             {changePassStatus.message && (
               <p
                 className={`text-sm font-medium mb-4 text-center ${changePassStatus.type === "error" ? "text-rose-400" : "text-emerald-400"}`}
@@ -660,7 +828,6 @@ export default function CameraDashboard() {
                 {changePassStatus.message}
               </p>
             )}
-
             <div className="flex gap-3 w-full mt-2">
               <button
                 onClick={() => {
