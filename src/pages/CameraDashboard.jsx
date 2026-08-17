@@ -26,7 +26,6 @@ export default function CameraDashboard() {
   const [events, setEvents] = useState([]);
   const [albumOpen, setAlbumOpen] = useState(false);
 
-  // --- STATE MỚI CHO BỘ LỌC ---
   const [showFilter, setShowFilter] = useState(false);
   const [appliedEvents, setAppliedEvents] = useState([]);
   const [appliedUIDs, setAppliedUIDs] = useState([]);
@@ -39,9 +38,11 @@ export default function CameraDashboard() {
     type: "",
     message: "",
   });
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [currentOtp, setCurrentOtp] = useState("");
 
-  const API_BASE_URL = "http://192.168.1.10:8000";
-  const WS_URL = "ws://192.168.1.10:8000/ws/events";
+  const API_BASE_URL = "http://192.168.1.13:8000";
+  const WS_URL = "ws://192.168.1.13:8000/ws/events";
 
   // --- LOGIC XỬ LÝ BỘ LỌC ---
   // Các sự kiện cố định dựa trên backend
@@ -142,6 +143,20 @@ export default function CameraDashboard() {
       await fetch(`${API_BASE_URL}/api/remote-stop-alarm`, { method: "POST" });
     } catch (err) {
       alert("Lỗi kết nối Server");
+    }
+  };
+  const handleGenerateOTP = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/generate-otp`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        setCurrentOtp(data.otp);
+        setShowOtpModal(true);
+      }
+    } catch (err) {
+      alert("Lỗi kết nối Server khi tạo OTP");
     }
   };
 
@@ -408,6 +423,12 @@ export default function CameraDashboard() {
         <h1 className="text-3xl font-semibold">SECURITY HUB</h1>
         <div className="flex gap-4">
           <button
+            onClick={handleGenerateOTP}
+            className="px-5 py-2 flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/50 transition rounded-xl font-medium"
+          >
+            Cấp mã OTP
+          </button>
+          <button
             onClick={handleStopAlarmClick}
             className="px-5 py-2 flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border border-yellow-500/50 transition rounded-xl font-medium"
           >
@@ -415,7 +436,7 @@ export default function CameraDashboard() {
           </button>
           <button
             onClick={handleRemoteUnlockClick}
-            className="px-5 py-2 flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 transition rounded-xl font-medium shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+            className="px-5 py-2 flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 transition rounded-xl font-medium"
           >
             Mở Cửa
           </button>
@@ -423,13 +444,13 @@ export default function CameraDashboard() {
             onClick={handleUserManagerClick}
             className="px-5 py-2 flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 transition rounded-xl font-medium"
           >
-            <FiUserCheck className="text-xl" /> Hồ Sơ
+            Hồ Sơ
           </button>
           <button
             onClick={() => setAlbumOpen(true)}
             className="px-5 py-2 flex items-center gap-2 bg-rose-600 hover:bg-rose-500 transition rounded-xl shadow-[0_0_15px_rgba(225,29,72,0.4)] font-medium"
           >
-            <FiShield className="text-xl" /> Cảnh Báo Bảo Mật
+            CẢNH BÁO BẢO MẬT
           </button>
         </div>
       </div>
@@ -463,7 +484,7 @@ export default function CameraDashboard() {
         <div className="xl:col-span-1 w-full flex flex-col gap-6">
           <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700 border-t-[6px] border-t-cyan-500 shadow-[0_15px_40px_-10px_rgba(0,0,0,0.7)] relative transition-all duration-300 hover:-translate-y-1">
             <h2 className="text-xl font-semibold flex items-center gap-2 mb-4">
-              <FiBarChart2 /> Hoạt Động Gần Đây
+              <FiBarChart2 /> HOẠT ĐỘNG GẦN ĐÂY
             </h2>
             <div className="max-h-[380px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {events.length === 0 && (
@@ -501,7 +522,7 @@ export default function CameraDashboard() {
           >
             <div className="p-6 border-b border-slate-700 flex justify-between items-center shrink-0">
               <h2 className="text-2xl font-semibold flex items-center gap-3 text-rose-400">
-                <FiShield /> Nhật Ký Cảnh Báo Bảo Mật
+                <FiShield /> Nhật ký cảnh báo bảo mật
               </h2>
               <button
                 onClick={() => setAlbumOpen(false)}
@@ -677,7 +698,7 @@ export default function CameraDashboard() {
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-md border border-slate-700 flex flex-col items-center">
-            <div className="w-16 h-16 rounded-full bg-slate-900 border border-cyan-500/50 flex items-center justify-center mb-4 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+            <div className="w-16 h-16 rounded-full bg-slate-900 border border-cyan-500/50 flex items-center justify-center mb-4">
               <FiLock className="text-3xl text-cyan-400" />
             </div>
             <h2 className="text-2xl font-semibold mb-2">Xác thực</h2>
@@ -845,6 +866,29 @@ export default function CameraDashboard() {
                 Cập nhật
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {showOtpModal && (
+        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-800 rounded-2xl p-8 shadow-2xl w-full max-w-sm border border-slate-700 flex flex-col items-center text-center">
+            <h2 className="text-xl font-semibold mb-2 text-blue-400">Mã OTP</h2>
+            <p className="text-sm text-slate-400 mb-6">
+              Mã này có hiệu lực 10 phút và chỉ dùng được 1 lần duy nhất.
+            </p>
+
+            <div className="bg-slate-900 border border-blue-500/30 rounded-xl px-8 py-4 mb-6 shadow-inner">
+              <span className="text-4xl font-mono font-bold tracking-[0.25em] text-white">
+                {currentOtp}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setShowOtpModal(false)}
+              className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition shadow-lg"
+            >
+              Đã Xong
+            </button>
           </div>
         </div>
       )}
