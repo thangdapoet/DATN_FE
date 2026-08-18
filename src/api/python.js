@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_BASE = "http://192.168.1.10:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 // ===============================
 // 📌 1. Get history grouped by date
