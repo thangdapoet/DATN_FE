@@ -16,33 +16,43 @@ import {
 } from "react-icons/fi";
 
 export default function CameraDashboard() {
+  // ==========================================
+  // 1. STATE MANAGEMENT
+  // ==========================================
+  // UI & Modals
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserManager, setShowUserManager] = useState(false);
+  const [showChangePassModal, setShowChangePassModal] = useState(false);
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [albumOpen, setAlbumOpen] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
+  const [passTab, setPassTab] = useState("web");
+
+  // Data & Actions
   const [adminPassword, setAdminPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [registeredUsers, setRegisteredUsers] = useState([]);
   const [pendingAction, setPendingAction] = useState("");
-
   const [historyByDate, setHistoryByDate] = useState({});
   const [selectedDate, setSelectedDate] = useState("");
   const [events, setEvents] = useState([]);
-  const [albumOpen, setAlbumOpen] = useState(false);
+  const [currentOtp, setCurrentOtp] = useState("");
+  const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
+  const [doorPasswords, setDoorPasswords] = useState({ new: "", confirm: "" });
+  const [changePassStatus, setChangePassStatus] = useState({
+    type: "",
+    message: "",
+  });
 
-  const [showFilter, setShowFilter] = useState(false);
+  // Filters
   const [appliedEvents, setAppliedEvents] = useState([]);
   const [appliedUIDs, setAppliedUIDs] = useState([]);
   const [tempEvents, setTempEvents] = useState([]);
   const [tempUIDs, setTempUIDs] = useState([]);
 
-  const [showChangePassModal, setShowChangePassModal] = useState(false);
-  const [passwords, setPasswords] = useState({ old: "", new: "", confirm: "" });
-  const [changePassStatus, setChangePassStatus] = useState({
-    type: "",
-    message: "",
-  });
-  const [showOtpModal, setShowOtpModal] = useState(false);
-  const [currentOtp, setCurrentOtp] = useState("");
-
+  // ==========================================
+  // 2. CONSTANTS & CONFIGS
+  // ==========================================
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const WS_URL = API_BASE_URL.replace("http", "ws") + "/ws/events";
 
@@ -62,8 +72,13 @@ export default function CameraDashboard() {
     { id: "WEB_ADMIN_DELETED", label: "Xóa hồ sơ qua Web" },
   ];
 
+  // ==========================================
+  // 3. DERIVED DATA (CALCULATIONS)
+  // ==========================================
   const baseItems = historyByDate[selectedDate] || [];
-
+  const sortedDates = Object.keys(historyByDate).sort(
+    (a, b) => new Date(b) - new Date(a),
+  );
   const uniqueUIDs = [...new Set(baseItems.map((h) => h.UID))]
     .filter(Boolean)
     .filter((uid) => uid !== "WEB_ADMIN" && uid !== "UNKNOWN");
@@ -82,79 +97,55 @@ export default function CameraDashboard() {
     return matchEvent && matchUID;
   });
 
-  const toggleTempEvent = (id) => {
-    setTempEvents((prev) =>
-      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id],
-    );
-  };
+  // ==========================================
+  // 4. EFFECTS (LIFECYCLE)
+  // ==========================================
+  useEffect(() => {
+    loadHistory();
+  }, []);
 
-  const toggleTempUID = (uid) => {
-    setTempUIDs((prev) =>
-      prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid],
-    );
-  };
+  useEffect(() => {
+    const socket = new WebSocket(WS_URL);
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      const newEvent = { ...data, time: new Date().toLocaleTimeString() };
 
-  const handleApplyFilter = () => {
-    setAppliedEvents(tempEvents);
-    setAppliedUIDs(tempUIDs);
-    setShowFilter(false);
-  };
+      setEvents((prevEvents) => [newEvent, ...prevEvents].slice(0, 15));
 
-  const handleClearFilter = () => {
-    setTempEvents([]);
-    setTempUIDs([]);
-  };
-
-  const openFilterPanel = () => {
-    setTempEvents(appliedEvents);
-    setTempUIDs(appliedUIDs);
-    setShowFilter(true);
-  };
-
-  const handleRemoteUnlockClick = () => {
-    setPendingAction("unlock");
-    setShowAuthModal(true);
-  };
-
-  const handleStopAlarmClick = () => {
-    setPendingAction("stopAlarm");
-    setShowAuthModal(true);
-  };
-
-  const handleUserManagerClick = () => {
-    setPendingAction("userManager");
-    setShowAuthModal(true);
-  };
-
-  const executeRemoteUnlock = async () => {
-    try {
-      await fetch(`${API_BASE_URL}/api/remote-unlock`, { method: "POST" });
-    } catch (err) {
-      alert("Lỗi kết nối server");
-    }
-  };
-
-  const executeStopAlarm = async () => {
-    try {
-      await fetch(`${API_BASE_URL}/api/remote-stop-alarm`, { method: "POST" });
-    } catch (err) {
-      alert("Lỗi kết nối Server");
-    }
-  };
-
-  const handleGenerateOTP = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/generate-otp`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (data.status === "success") {
-        setCurrentOtp(data.otp);
-        setShowOtpModal(true);
+      if (
+        data.status === "bad" ||
+        data.message.includes("Đã thêm") ||
+        data.message.includes("Đã xóa")
+      ) {
+        loadHistory();
       }
-    } catch (err) {
-      alert("Lỗi kết nối Server khi tạo OTP");
-    }
+    };
+    return () => socket.close();
+  }, []);
+
+  // ==========================================
+  // 5. API CALLS & BUSINESS LOGIC
+  // ==========================================
+  const loadHistory = async () => {
+    try {
+      const data = await getHistoryGroupedByDateAsync();
+      setHistoryByDate(data);
+      const dates = Object.keys(data);
+      if (dates.length > 0) {
+        const newest = dates.sort((a, b) => new Date(b) - new Date(a))[0];
+        setSelectedDate(newest);
+      } else {
+        setSelectedDate("");
+      }
+    } catch (error) {}
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users`);
+      const data = await res.json();
+      setRegisteredUsers(data.users);
+    } catch (err) {}
   };
 
   const handleVerifyAdmin = async () => {
@@ -174,9 +165,9 @@ export default function CameraDashboard() {
           setShowUserManager(true);
           fetchUsers();
         } else if (pendingAction === "unlock") {
-          executeRemoteUnlock();
+          fetch(`${API_BASE_URL}/api/remote-unlock`, { method: "POST" });
         } else if (pendingAction === "stopAlarm") {
-          executeStopAlarm();
+          fetch(`${API_BASE_URL}/api/remote-stop-alarm`, { method: "POST" });
         }
         setPendingAction("");
       } else {
@@ -187,21 +178,10 @@ export default function CameraDashboard() {
     }
   };
 
-  const fetchUsers = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/users`);
-      const data = await res.json();
-      setRegisteredUsers(data.users);
-    } catch (err) {
-      console.error("Lỗi khi tải danh sách:", err);
-    }
-  };
-
   const handleDeleteUser = async (uid) => {
     const isConfirm = window.confirm(
-      `CẢNH BÁO: Bạn có chắc chắn muốn xóa hồ sơ gương mặt và vô hiệu hóa thẻ RFID của người dùng [${uid}] không?\n\nHành động này không thể hoàn tác!`,
+      `CẢNH BÁO: Xóa hồ sơ & thẻ của [${uid}]?\nHành động này không thể hoàn tác!`,
     );
-
     if (!isConfirm) return;
 
     try {
@@ -209,27 +189,35 @@ export default function CameraDashboard() {
         method: "DELETE",
       });
       const data = await res.json();
+      if (data.status === "success") fetchUsers();
+      else alert("Lỗi từ server: " + data.message);
+    } catch (err) {
+      alert("Lỗi kết nối đến Server");
+    }
+  };
 
+  const handleGenerateOTP = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/generate-otp`, {
+        method: "POST",
+      });
+      const data = await res.json();
       if (data.status === "success") {
-        fetchUsers();
-      } else {
-        alert("Lỗi từ server: " + data.message);
+        setCurrentOtp(data.otp);
+        setShowOtpModal(true);
       }
     } catch (err) {
-      console.error("Lỗi khi gọi API xóa:", err);
-      alert("Lỗi kết nối đến Server");
+      alert("Lỗi kết nối Server khi tạo OTP");
     }
   };
 
   const handleChangePassword = async () => {
     setChangePassStatus({ type: "", message: "" });
-
     if (passwords.new !== passwords.confirm) {
-      setChangePassStatus({
+      return setChangePassStatus({
         type: "error",
         message: "Mật khẩu xác nhận không khớp",
       });
-      return;
     }
 
     try {
@@ -254,62 +242,89 @@ export default function CameraDashboard() {
         setChangePassStatus({ type: "error", message: data.message });
       }
     } catch (err) {
-      setChangePassStatus({ type: "error", message: "Lỗi kết nối đến Server" });
+      setChangePassStatus({ type: "error", message: "Lỗi kết nối Server" });
     }
   };
 
-  const loadHistory = async () => {
+  const handleChangeDoorPassword = async () => {
+    setChangePassStatus({ type: "", message: "" });
+    if (doorPasswords.new !== doorPasswords.confirm) {
+      return setChangePassStatus({
+        type: "error",
+        message: "Mật khẩu xác nhận không khớp",
+      });
+    }
+    if (doorPasswords.new.length < 4 || doorPasswords.new.length > 16) {
+      return setChangePassStatus({
+        type: "error",
+        message: "Mật khẩu cửa phải từ 4 - 16 ký tự",
+      });
+    }
+
     try {
-      const data = await getHistoryGroupedByDateAsync();
-      setHistoryByDate(data);
+      const res = await fetch(`${API_BASE_URL}/api/remote-change-door-pass`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: doorPasswords.new }),
+      });
+      const data = await res.json();
 
-      const dates = Object.keys(data);
-      if (dates.length > 0) {
-        const newest = dates.sort((a, b) => new Date(b) - new Date(a))[0];
-        setSelectedDate(newest);
+      if (data.status === "success") {
+        setChangePassStatus({
+          type: "success",
+          message: "Đổi mật khẩu cửa thành công",
+        });
+        setTimeout(() => {
+          setShowChangePassModal(false);
+          setDoorPasswords({ new: "", confirm: "" });
+          setChangePassStatus({ type: "", message: "" });
+        }, 1500);
       } else {
-        setSelectedDate("");
+        setChangePassStatus({ type: "error", message: data.message });
       }
-    } catch (error) {
-      console.error("Lỗi khi tải lịch sử:", error);
+    } catch (err) {
+      setChangePassStatus({ type: "error", message: "Lỗi kết nối Server" });
     }
   };
 
-  useEffect(() => {
-    loadHistory();
-  }, []);
+  // ==========================================
+  // 6. UI HANDLERS (CLICKS & FILTERS)
+  // ==========================================
+  const toggleTempEvent = (id) =>
+    setTempEvents((prev) =>
+      prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id],
+    );
+  const toggleTempUID = (uid) =>
+    setTempUIDs((prev) =>
+      prev.includes(uid) ? prev.filter((u) => u !== uid) : [...prev, uid],
+    );
+  const handleApplyFilter = () => {
+    setAppliedEvents(tempEvents);
+    setAppliedUIDs(tempUIDs);
+    setShowFilter(false);
+  };
+  const handleClearFilter = () => {
+    setTempEvents([]);
+    setTempUIDs([]);
+  };
+  const openFilterPanel = () => {
+    setTempEvents(appliedEvents);
+    setTempUIDs(appliedUIDs);
+    setShowFilter(true);
+  };
 
-  useEffect(() => {
-    const socket = new WebSocket(WS_URL);
-
-    socket.onopen = () => {
-      console.log("Đã kết nối WebSocket tới Server Python!");
-    };
-
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log("Nhận sự kiện MQTT từ Backend:", data);
-
-      const newEvent = { ...data, time: new Date().toLocaleTimeString() };
-
-      setEvents((prevEvents) => [newEvent, ...prevEvents].slice(0, 15));
-      if (
-        data.status === "bad" ||
-        data.message.includes("Đã thêm") ||
-        data.message.includes("Đã xóa")
-      ) {
-        loadHistory();
-      }
-    };
-
-    socket.onerror = (err) => console.error("Lỗi WebSocket:", err);
-
-    return () => socket.close();
-  }, []);
-
-  const sortedDates = Object.keys(historyByDate).sort(
-    (a, b) => new Date(b) - new Date(a),
-  );
+  const handleRemoteUnlockClick = () => {
+    setPendingAction("unlock");
+    setShowAuthModal(true);
+  };
+  const handleStopAlarmClick = () => {
+    setPendingAction("stopAlarm");
+    setShowAuthModal(true);
+  };
+  const handleUserManagerClick = () => {
+    setPendingAction("userManager");
+    setShowAuthModal(true);
+  };
 
   const getBadgeConfig = (status) => {
     switch (status) {
@@ -318,24 +333,24 @@ export default function CameraDashboard() {
       case "RFID_LOCKED":
       case "FACE_LOCKED":
       case "CLONED_WARNING":
-        return { style: "bg-[#5c1c1c] text-[#F2B8B5]" }; // Đỏ trầm Google Home
+        return { style: "bg-[#5c1c1c] text-[#F2B8B5]" };
       case "FAKE_OR_STRANGER":
       case "FACE_NOT_FOUND":
       case "NO_REGISTRATION_FACE":
       case "UNKNOWN_FACE":
-        return { style: "bg-[#423E2A] text-[#E3D081]" }; // Vàng trầm Google Home
+        return { style: "bg-[#423E2A] text-[#E3D081]" };
       case "ADMIN_REGISTERED":
       case "SUCCESS":
       case "WEB_REMOTE_UNLOCK":
-        return { style: "bg-[#0F5223] text-[#C4EED0]" }; // Xanh lục trầm Google Home
-      case "WEB_STOPPED_ALARM":
-      case "WEB_ADMIN_DELETED":
-        return { style: "bg-[#282A2D] text-[#C4C7C5]" }; // Xám mặc định
+        return { style: "bg-[#0F5223] text-[#C4EED0]" };
       default:
         return { style: "bg-[#282A2D] text-[#C4C7C5]" };
     }
   };
 
+  // ==========================================
+  // 7. RENDER COMPONENT
+  // ==========================================
   return (
     <div className="min-h-screen bg-[#131314] p-6 md:p-8 text-[#E3E3E3] font-sans selection:bg-[#004A77]">
       <div className="max-w-[1400px] mx-auto">
@@ -351,13 +366,12 @@ export default function CameraDashboard() {
           </h1>
         </div>
 
-        {/* THIẾT BỊ & ĐIỀU KHIỂN (STYLE GOOGLE HOME CARDS) */}
+        {/* THIẾT BỊ & ĐIỀU KHIỂN */}
         <div className="mb-8">
           <h2 className="text-sm font-medium text-[#C4C7C5] mb-4 tracking-wide px-1">
             Thiết bị & Lối tắt
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-            {/* Card Mở Cửa - Xanh lục trầm (Màu trạng thái Active của Google Home) */}
             <button
               onClick={handleRemoteUnlockClick}
               className="flex items-center gap-4 bg-[#0F5223] hover:bg-[#146c2e] p-5 rounded-[28px] text-left transition-colors duration-200"
@@ -374,8 +388,6 @@ export default function CameraDashboard() {
                 </span>
               </div>
             </button>
-
-            {/* Card Tắt báo động - Vàng rêu trầm */}
             <button
               onClick={handleStopAlarmClick}
               className="flex items-center gap-4 bg-[#423E2A] hover:bg-[#524d34] p-5 rounded-[28px] text-left transition-colors duration-200"
@@ -392,8 +404,6 @@ export default function CameraDashboard() {
                 </span>
               </div>
             </button>
-
-            {/* Card Cấp OTP - Xanh lam mờ */}
             <button
               onClick={handleGenerateOTP}
               className="flex items-center gap-4 bg-[#004A77] hover:bg-[#005c94] p-5 rounded-[28px] text-left transition-colors duration-200"
@@ -403,15 +413,13 @@ export default function CameraDashboard() {
               </div>
               <div className="flex flex-col">
                 <span className="font-medium text-[#C2E7FF] text-[15px]">
-                  Mật khẩu tạm thời
+                  Mã tạm thời
                 </span>
                 <span className="text-xs text-[#C2E7FF] opacity-80 mt-0.5">
                   Tạo OTP
                 </span>
               </div>
             </button>
-
-            {/* Card Quản lý hồ sơ - Xám mặc định */}
             <button
               onClick={handleUserManagerClick}
               className="flex items-center gap-4 bg-[#282A2D] hover:bg-[#323538] p-5 rounded-[28px] text-left transition-colors duration-200"
@@ -428,8 +436,6 @@ export default function CameraDashboard() {
                 </span>
               </div>
             </button>
-
-            {/* Card Nhật ký cảnh báo - Xám mặc định */}
             <button
               onClick={() => setAlbumOpen(true)}
               className="flex items-center gap-4 bg-[#282A2D] hover:bg-[#323538] p-5 rounded-[28px] text-left transition-colors duration-200"
@@ -451,7 +457,6 @@ export default function CameraDashboard() {
 
         {/* DASHBOARD CHÍNH */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-          {/* Cụm Live Camera */}
           <div className="xl:col-span-2 flex flex-col gap-4">
             <div className="bg-[#282A2D] rounded-[32px] p-6 w-full relative transition-all duration-300">
               <div className="flex justify-between items-center mb-6">
@@ -475,7 +480,6 @@ export default function CameraDashboard() {
             </div>
           </div>
 
-          {/* Cụm Hoạt động gần đây */}
           <div className="xl:col-span-1 w-full flex flex-col gap-4">
             <div className="bg-[#282A2D] rounded-[32px] p-6 relative transition-all duration-300">
               <h2 className="text-lg font-medium flex items-center gap-2 mb-6 text-[#E3E3E3]">
@@ -484,7 +488,7 @@ export default function CameraDashboard() {
               <div className="max-h-[360px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                 {events.length === 0 && (
                   <div className="text-[#C4C7C5] text-sm text-center mt-6">
-                    Không có sự kiện mới nào.
+                    Không có sự kiện mới.
                   </div>
                 )}
                 {events.map((ev, i) => (
@@ -492,11 +496,9 @@ export default function CameraDashboard() {
                     key={i}
                     className="p-4 bg-[#131314] rounded-[20px] flex flex-col gap-1 transition-all"
                   >
-                    <div className="flex justify-between items-start">
-                      <span className="font-normal text-[15px] text-[#E3E3E3] leading-snug">
-                        {ev.message}
-                      </span>
-                    </div>
+                    <span className="font-normal text-[15px] text-[#E3E3E3] leading-snug">
+                      {ev.message}
+                    </span>
                     <span className="text-xs text-[#C4C7C5] mt-1">
                       {ev.time}
                     </span>
@@ -529,9 +531,7 @@ export default function CameraDashboard() {
                 Đóng
               </button>
             </div>
-
             <div className="p-8 overflow-y-auto custom-scrollbar">
-              {/* THANH CÔNG CỤ: NGÀY & LỌC */}
               <div className="flex justify-between items-center mb-8 relative">
                 <div className="flex items-center gap-4">
                   <select
@@ -548,14 +548,9 @@ export default function CameraDashboard() {
                       </option>
                     ))}
                   </select>
-
                   <button
                     onClick={openFilterPanel}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-colors ${
-                      appliedEvents.length > 0 || appliedUIDs.length > 0
-                        ? "bg-[#C2E7FF] text-[#001D35]"
-                        : "bg-[#282A2D] hover:bg-[#323538] text-[#E3E3E3]"
-                    }`}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-colors ${appliedEvents.length > 0 || appliedUIDs.length > 0 ? "bg-[#C2E7FF] text-[#001D35]" : "bg-[#282A2D] hover:bg-[#323538] text-[#E3E3E3]"}`}
                   >
                     <FiFilter /> Bộ lọc{" "}
                     {(appliedEvents.length > 0 || appliedUIDs.length > 0) &&
@@ -563,15 +558,11 @@ export default function CameraDashboard() {
                   </button>
                 </div>
 
-                {/* PANEL BỘ LỌC */}
                 {showFilter && (
                   <div className="absolute top-14 left-0 w-full max-w-2xl bg-[#282A2D] rounded-[28px] shadow-2xl z-50 p-8 flex flex-col gap-8">
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-medium text-lg text-[#E3E3E3]">
-                        Tùy chỉnh hiển thị
-                      </h3>
-                    </div>
-
+                    <h3 className="font-medium text-lg text-[#E3E3E3]">
+                      Tùy chỉnh hiển thị
+                    </h3>
                     <div className="flex flex-col gap-6 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
                       <div>
                         <h4 className="text-[#C4C7C5] font-medium mb-4 text-sm uppercase tracking-wider">
@@ -582,18 +573,13 @@ export default function CameraDashboard() {
                             <button
                               key={ev.id}
                               onClick={() => toggleTempEvent(ev.id)}
-                              className={`px-4 py-2 rounded-full text-sm transition-colors ${
-                                tempEvents.includes(ev.id)
-                                  ? "bg-[#C2E7FF] text-[#001D35]"
-                                  : "bg-[#131314] text-[#E3E3E3] hover:bg-[#323538]"
-                              }`}
+                              className={`px-4 py-2 rounded-full text-sm transition-colors ${tempEvents.includes(ev.id) ? "bg-[#C2E7FF] text-[#001D35]" : "bg-[#131314] text-[#E3E3E3] hover:bg-[#323538]"}`}
                             >
                               {ev.label}
                             </button>
                           ))}
                         </div>
                       </div>
-
                       {uniqueUIDs.length > 0 && (
                         <div>
                           <h4 className="text-[#C4C7C5] font-medium mb-4 text-sm uppercase tracking-wider">
@@ -604,11 +590,7 @@ export default function CameraDashboard() {
                               <button
                                 key={uid}
                                 onClick={() => toggleTempUID(uid)}
-                                className={`px-4 py-2 rounded-full text-sm transition-colors ${
-                                  tempUIDs.includes(uid)
-                                    ? "bg-[#C2E7FF] text-[#001D35]"
-                                    : "bg-[#131314] text-[#E3E3E3] hover:bg-[#323538]"
-                                }`}
+                                className={`px-4 py-2 rounded-full text-sm transition-colors ${tempUIDs.includes(uid) ? "bg-[#C2E7FF] text-[#001D35]" : "bg-[#131314] text-[#E3E3E3] hover:bg-[#323538]"}`}
                               >
                                 {uid}
                               </button>
@@ -617,7 +599,6 @@ export default function CameraDashboard() {
                         </div>
                       )}
                     </div>
-
                     <div className="flex justify-end gap-3 pt-2">
                       <button
                         onClick={handleClearFilter}
@@ -636,7 +617,6 @@ export default function CameraDashboard() {
                 )}
               </div>
 
-              {/* LƯỚI HIỂN THỊ KẾT QUẢ ĐÃ ĐƯỢC LỌC */}
               {selectedDate && displayedItems.length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                   {displayedItems.map((h) => (
@@ -648,7 +628,7 @@ export default function CameraDashboard() {
                         <div className="overflow-hidden rounded-[20px] mb-4 bg-[#131314]">
                           <img
                             src={`${API_BASE_URL}/${h.ImageUrl}`}
-                            alt="Face Capture"
+                            alt="Capture"
                             className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-300"
                             onError={(e) => {
                               e.target.src =
@@ -688,7 +668,7 @@ export default function CameraDashboard() {
         </div>
       )}
 
-      {/* Modal Xác Thực */}
+      {/* MODAL XÁC THỰC */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-[#131314]/90 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-[#1A1C1E] rounded-[32px] p-8 shadow-2xl w-full max-w-sm flex flex-col items-center">
@@ -730,7 +710,7 @@ export default function CameraDashboard() {
         </div>
       )}
 
-      {/* Modal Quản lý User */}
+      {/* MODAL QUẢN LÝ USER */}
       {showUserManager && (
         <div
           className="fixed inset-0 bg-[#131314]/90 z-[60] flex items-center justify-center p-4 backdrop-blur-sm"
@@ -800,92 +780,144 @@ export default function CameraDashboard() {
         </div>
       )}
 
-      {/* Modal Đổi mật khẩu */}
+      {/* MODAL ĐỔI MẬT KHẨU (Đã cập nhật giao diện Dark Theme) */}
       {showChangePassModal && (
         <div className="fixed inset-0 bg-[#131314]/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#1A1C1E] rounded-[32px] p-8 shadow-2xl w-full max-w-sm flex flex-col">
-            <h2 className="text-2xl font-normal mb-8 text-center text-[#E3E3E3]">
-              Cập nhật mật khẩu
+          <div className="bg-[#1A1C1E] rounded-[32px] p-8 shadow-2xl w-full max-w-md border border-[#282A2D] flex flex-col">
+            <h2 className="text-2xl font-normal mb-6 text-center text-[#E3E3E3]">
+              Đổi mật khẩu
             </h2>
-            <div className="space-y-4 mb-6">
-              <input
-                type="password"
-                placeholder="Mật khẩu cũ"
-                value={passwords.old}
-                onChange={(e) =>
-                  setPasswords({ ...passwords, old: e.target.value })
-                }
-                className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#E3E3E3] outline-none focus:bg-[#323538] transition-colors"
-              />
-              <input
-                type="password"
-                placeholder="Mật khẩu mới"
-                value={passwords.new}
-                onChange={(e) =>
-                  setPasswords({ ...passwords, new: e.target.value })
-                }
-                className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#E3E3E3] outline-none focus:bg-[#323538] transition-colors"
-              />
-              <input
-                type="password"
-                placeholder="Xác nhận lại"
-                value={passwords.confirm}
-                onChange={(e) =>
-                  setPasswords({ ...passwords, confirm: e.target.value })
-                }
-                className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#E3E3E3] outline-none focus:bg-[#323538] transition-colors"
-              />
+
+            <div className="flex bg-[#282A2D] p-1.5 rounded-full mb-8 relative">
+              <button
+                onClick={() => {
+                  setPassTab("web");
+                  setChangePassStatus({ type: "", message: "" });
+                }}
+                className={`flex-1 py-2.5 text-sm font-medium rounded-full transition-all duration-300 z-10 ${passTab === "web" ? "bg-[#1A1C1E] text-[#A8C7FA] shadow-sm" : "text-[#C4C7C5] hover:text-[#E3E3E3]"}`}
+              >
+                Mật khẩu Web
+              </button>
+              <button
+                onClick={() => {
+                  setPassTab("door");
+                  setChangePassStatus({ type: "", message: "" });
+                }}
+                className={`flex-1 py-2.5 text-sm font-medium rounded-full transition-all duration-300 z-10 ${passTab === "door" ? "bg-[#1A1C1E] text-[#A8C7FA] shadow-sm" : "text-[#C4C7C5] hover:text-[#E3E3E3]"}`}
+              >
+                Mật khẩu Cửa
+              </button>
             </div>
+
+            {passTab === "web" ? (
+              <div className="space-y-4 mb-6">
+                <input
+                  type="password"
+                  placeholder="Mật khẩu cũ"
+                  value={passwords.old}
+                  onChange={(e) =>
+                    setPasswords({ ...passwords, old: e.target.value })
+                  }
+                  className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#E3E3E3] outline-none focus:bg-[#323538] transition-colors"
+                />
+                <input
+                  type="password"
+                  placeholder="Mật khẩu mới"
+                  value={passwords.new}
+                  onChange={(e) =>
+                    setPasswords({ ...passwords, new: e.target.value })
+                  }
+                  className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#E3E3E3] outline-none focus:bg-[#323538] transition-colors"
+                />
+                <input
+                  type="password"
+                  placeholder="Xác nhận mật khẩu mới"
+                  value={passwords.confirm}
+                  onChange={(e) =>
+                    setPasswords({ ...passwords, confirm: e.target.value })
+                  }
+                  className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#E3E3E3] outline-none focus:bg-[#323538] transition-colors"
+                />
+              </div>
+            ) : (
+              <div className="space-y-4 mb-6">
+                <p className="text-xs text-[#C4C7C5] text-center px-4 leading-relaxed">
+                  Dùng để mở trên Keypad. Yêu cầu 4-16 ký tự. (Chỉ dùng phím số
+                  và A, B, C, D)
+                </p>
+                <input
+                  type="password"
+                  placeholder="Mật khẩu cửa mới"
+                  value={doorPasswords.new}
+                  onChange={(e) =>
+                    setDoorPasswords({ ...doorPasswords, new: e.target.value })
+                  }
+                  className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#A8C7FA] outline-none focus:bg-[#323538] transition-colors font-mono tracking-[0.3em] text-center text-lg"
+                />
+                <input
+                  type="password"
+                  placeholder="Xác nhận mật khẩu cửa"
+                  value={doorPasswords.confirm}
+                  onChange={(e) =>
+                    setDoorPasswords({
+                      ...doorPasswords,
+                      confirm: e.target.value,
+                    })
+                  }
+                  className="w-full bg-[#282A2D] rounded-[20px] px-5 py-4 text-[#A8C7FA] outline-none focus:bg-[#323538] transition-colors font-mono tracking-[0.3em] text-center text-lg"
+                />
+              </div>
+            )}
 
             {changePassStatus.message && (
               <p
-                className={`text-sm font-medium mb-6 text-center ${
-                  changePassStatus.type === "error"
-                    ? "text-[#F2B8B5]"
-                    : "text-[#C4EED0]"
-                }`}
+                className={`text-sm font-medium mb-6 text-center ${changePassStatus.type === "error" ? "text-[#F2B8B5]" : "text-[#C4EED0]"}`}
               >
                 {changePassStatus.message}
               </p>
             )}
+
             <div className="flex gap-3 w-full">
               <button
                 onClick={() => {
                   setShowChangePassModal(false);
                   setChangePassStatus({ type: "", message: "" });
+                  setPassTab("web");
                 }}
                 className="flex-1 py-3.5 rounded-full bg-[#282A2D] hover:bg-[#323538] text-[#E3E3E3] font-medium transition text-sm"
               >
                 Hủy
               </button>
               <button
-                onClick={handleChangePassword}
+                onClick={
+                  passTab === "web"
+                    ? handleChangePassword
+                    : handleChangeDoorPassword
+                }
                 className="flex-1 py-3.5 rounded-full bg-[#A8C7FA] hover:bg-[#8AB4F8] text-[#052D49] font-medium transition text-sm"
               >
-                Lưu lại
+                Cập nhật
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Cấp mã OTP */}
+      {/* MODAL CẤP MÃ OTP */}
       {showOtpModal && (
         <div className="fixed inset-0 bg-[#131314]/90 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-[#1A1C1E] rounded-[32px] p-8 shadow-2xl w-full max-w-sm flex flex-col items-center text-center">
+          <div className="bg-[#1A1C1E] rounded-[32px] p-8 shadow-2xl w-full max-w-sm flex flex-col items-center text-center border border-[#282A2D]">
             <h2 className="text-2xl font-normal mb-2 text-[#E3E3E3]">
               Mã vào cửa tạm thời
             </h2>
             <p className="text-[15px] text-[#C4C7C5] mb-8">
               Hiệu lực 10 phút. Chỉ sử dụng 1 lần.
             </p>
-
-            <div className="bg-[#282A2D] rounded-[24px] px-8 py-6 mb-8 w-full">
+            <div className="bg-[#282A2D] rounded-[24px] px-8 py-6 mb-8 w-full border border-[#323538]">
               <span className="text-4xl font-normal tracking-[0.2em] text-[#A8C7FA]">
                 {currentOtp}
               </span>
             </div>
-
             <button
               onClick={() => setShowOtpModal(false)}
               className="w-full py-3.5 rounded-full bg-[#A8C7FA] hover:bg-[#8AB4F8] text-[#052D49] font-medium transition text-[15px]"
