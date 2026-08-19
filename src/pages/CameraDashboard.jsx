@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { getHistoryGroupedByDateAsync } from "../api/python";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import {
   FiCamera,
   FiBarChart2,
@@ -97,6 +99,27 @@ export default function CameraDashboard() {
     return matchEvent && matchUID;
   });
 
+  const handleMove = async (direction, action) => {
+    await fetch(`${API_BASE_URL}/api/camera/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ direction, action }),
+    });
+  };
+
+  // Cấu trúc nút điều hướng
+  const DPadButton = ({ direction, label }) => (
+    <button
+      onMouseDown={() => handleMove(direction, "start")}
+      onMouseUp={() => handleMove(direction, "stop")}
+      onMouseLeave={() => handleMove(direction, "stop")} // Đề phòng trường hợp thả chuột ngoài vùng nút
+      onTouchStart={() => handleMove(direction, "start")} // Hỗ trợ điện thoại
+      onTouchEnd={() => handleMove(direction, "stop")}
+      className="p-4 bg-[#282A2D] hover:bg-[#323538] rounded-full text-[#E3E3E3] transition-all active:bg-[#A8C7FA] active:text-[#052D49]"
+    >
+      {label}
+    </button>
+  );
   // ==========================================
   // 4. EFFECTS (LIFECYCLE)
   // ==========================================
@@ -161,16 +184,45 @@ export default function CameraDashboard() {
         setShowAuthModal(false);
         setAdminPassword("");
         setAuthError("");
+
         if (pendingAction === "userManager") {
           setShowUserManager(true);
           fetchUsers();
         } else if (pendingAction === "unlock") {
-          fetch(`${API_BASE_URL}/api/remote-unlock`, { method: "POST" });
+          // Xử lý gọi API và thêm Toast cho Mở cửa
+          try {
+            const unlockRes = await fetch(`${API_BASE_URL}/api/remote-unlock`, {
+              method: "POST",
+            });
+            const unlockData = await unlockRes.json();
+            if (unlockData.status === "success") {
+              toast.success("Đã gửi lệnh mở cửa thành công");
+            } else {
+              toast.error("Lỗi từ server: " + unlockData.message);
+            }
+          } catch (e) {
+            toast.error("Lỗi kết nối khi gửi lệnh mở cửa");
+          }
         } else if (pendingAction === "stopAlarm") {
-          fetch(`${API_BASE_URL}/api/remote-stop-alarm`, { method: "POST" });
+          // Xử lý gọi API và thêm Toast cho Tắt báo động
+          try {
+            const alarmRes = await fetch(
+              `${API_BASE_URL}/api/remote-stop-alarm`,
+              { method: "POST" },
+            );
+            const alarmData = await alarmRes.json();
+            if (alarmData.status === "success") {
+              toast.success("Đã gửi lệnh tắt báo động");
+            } else {
+              toast.error("Lỗi từ server: " + alarmData.message);
+            }
+          } catch (e) {
+            toast.error("Lỗi kết nối khi tắt báo động");
+          }
         }
         setPendingAction("");
       } else {
+        // Có thể thay đổi authError thành toast nếu bạn muốn đồng bộ giao diện
         setAuthError(data.message);
       }
     } catch (err) {
@@ -189,10 +241,16 @@ export default function CameraDashboard() {
         method: "DELETE",
       });
       const data = await res.json();
-      if (data.status === "success") fetchUsers();
-      else alert("Lỗi từ server: " + data.message);
+      if (data.status === "success") {
+        fetchUsers();
+        // Thông báo thành công
+        toast.success(`Đã xóa người dùng ${uid}`);
+      } else {
+        // Thay thế alert mặc định
+        toast.error("Lỗi từ server: " + data.message);
+      }
     } catch (err) {
-      alert("Lỗi kết nối đến Server");
+      toast.error("Lỗi kết nối đến Server");
     }
   };
 
@@ -205,9 +263,11 @@ export default function CameraDashboard() {
       if (data.status === "success") {
         setCurrentOtp(data.otp);
         setShowOtpModal(true);
+        toast.success("Đã tạo OTP thành công!");
       }
     } catch (err) {
-      alert("Lỗi kết nối Server khi tạo OTP");
+      // Thay thế alert mặc định
+      toast.error("Lỗi kết nối Server khi tạo OTP");
     }
   };
 
@@ -369,7 +429,7 @@ export default function CameraDashboard() {
         {/* THIẾT BỊ & ĐIỀU KHIỂN */}
         <div className="mb-8">
           <h2 className="text-sm font-medium text-[#C4C7C5] mb-4 tracking-wide px-1">
-            Thiết bị & Lối tắt
+            Lối tắt
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <button
@@ -927,6 +987,29 @@ export default function CameraDashboard() {
           </div>
         </div>
       )}
+      {/* Thêm ToastContainer vào dòng cuối cùng trước thẻ đóng </div> ngoài cùng */}
+      <ToastContainer
+        position="bottom-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={true}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark" // 👈 Cấu hình Dark Theme tự động khớp với UI của bạn
+      />
+      <div className="absolute bottom-6 right-6 grid grid-cols-3 gap-2 p-3 bg-black/50 rounded-full backdrop-blur-md">
+        <div />
+        <DPadButton direction="up" label="▲" />
+        <div />
+        <DPadButton direction="left" label="◀" />
+        <div className="flex items-center justify-center">●</div>
+        <DPadButton direction="right" label="▶" />
+        <div />
+        <DPadButton direction="down" label="▼" />
+      </div>
     </div>
   );
 }
