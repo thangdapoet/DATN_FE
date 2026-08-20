@@ -473,7 +473,7 @@ export default function CameraDashboard() {
               </div>
               <div className="flex flex-col">
                 <span className="font-medium text-[#C2E7FF] text-[15px]">
-                  Mã tạm thời
+                  Mật khẩu tạm thời
                 </span>
                 <span className="text-xs text-[#C2E7FF] opacity-80 mt-0.5">
                   Tạo OTP
