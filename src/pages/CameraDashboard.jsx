@@ -108,14 +108,14 @@ export default function CameraDashboard() {
   };
 
   // Cấu trúc nút điều hướng
-  const DPadButton = ({ direction, label }) => (
+  const DPadButton = ({ direction, label, onMove }) => (
     <button
-      onMouseDown={() => handleMove(direction, "start")}
-      onMouseUp={() => handleMove(direction, "stop")}
-      onMouseLeave={() => handleMove(direction, "stop")} // Đề phòng trường hợp thả chuột ngoài vùng nút
-      onTouchStart={() => handleMove(direction, "start")} // Hỗ trợ điện thoại
-      onTouchEnd={() => handleMove(direction, "stop")}
-      className="p-4 bg-[#282A2D] hover:bg-[#323538] rounded-full text-[#E3E3E3] transition-all active:bg-[#A8C7FA] active:text-[#052D49]"
+      onMouseDown={() => onMove(direction, "start")}
+      onMouseUp={() => onMove(direction, "stop")}
+      onMouseLeave={() => onMove(direction, "stop")}
+      onTouchStart={() => onMove(direction, "start")}
+      onTouchEnd={() => onMove(direction, "stop")}
+      className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 active:bg-[#A8C7FA] active:text-[#052D49] rounded-full text-[#E3E3E3] transition-all backdrop-blur-sm"
     >
       {label}
     </button>
@@ -517,8 +517,10 @@ export default function CameraDashboard() {
 
         {/* DASHBOARD CHÍNH */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+          {/* DASHBOARD CHÍNH */}
           <div className="xl:col-span-2 flex flex-col gap-4">
             <div className="bg-[#282A2D] rounded-[32px] p-6 w-full relative transition-all duration-300">
+              {/* Tiêu đề & Nút Trực tiếp */}
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-lg font-medium flex items-center gap-2 text-[#E3E3E3]"></h2>
                 <div className="flex items-center gap-2 px-3 py-1 bg-[#131314] rounded-full">
@@ -528,13 +530,48 @@ export default function CameraDashboard() {
                   </span>
                 </div>
               </div>
+
+              {/* KHUNG VIDEO VÀ D-PAD ĐƯỢC GỘP CHUNG VÀO 1 THẺ GROUP */}
               <div className="flex justify-center w-full">
-                <div className="w-full max-w-[720px] bg-[#131314] rounded-[24px] overflow-hidden">
+                <div className="group relative w-full max-w-[720px] bg-[#131314] rounded-[24px] overflow-hidden shadow-lg border border-[#282A2D]">
+                  {/* Luồng Video */}
                   <img
                     src={`${API_BASE_URL}/video_feed`}
                     alt="Live Stream"
                     className="w-full object-contain"
                   />
+
+                  {/* Cụm D-pad đè lên góc dưới phải của Video */}
+                  <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-in-out z-10">
+                    <div className="grid grid-cols-3 gap-1.5 p-2 bg-black/40 backdrop-blur-xl rounded-full border border-white/10 shadow-2xl">
+                      <div />
+                      <DPadButton
+                        direction="up"
+                        label="▲"
+                        onMove={handleMove}
+                      />
+                      <div />
+                      <DPadButton
+                        direction="left"
+                        label="◀"
+                        onMove={handleMove}
+                      />
+                      <div className="flex items-center justify-center w-10 h-10 text-white/30 text-xs">
+                        ●
+                      </div>
+                      <DPadButton
+                        direction="right"
+                        label="▶"
+                        onMove={handleMove}
+                      />
+                      <div />
+                      <DPadButton
+                        direction="down"
+                        label="▼"
+                        onMove={handleMove}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1000,16 +1037,6 @@ export default function CameraDashboard() {
         pauseOnHover
         theme="dark" // 👈 Cấu hình Dark Theme tự động khớp với UI của bạn
       />
-      <div className="absolute bottom-6 right-6 grid grid-cols-3 gap-2 p-3 bg-black/50 rounded-full backdrop-blur-md">
-        <div />
-        <DPadButton direction="up" label="▲" />
-        <div />
-        <DPadButton direction="left" label="◀" />
-        <div className="flex items-center justify-center">●</div>
-        <DPadButton direction="right" label="▶" />
-        <div />
-        <DPadButton direction="down" label="▼" />
-      </div>
     </div>
   );
 }
